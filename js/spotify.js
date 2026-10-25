@@ -5,7 +5,7 @@
  * solo sul sito di Spotify e l'app riceve un token salvato sul dispositivo.
  */
 const Spotify = (() => {
-  const SCOPES = 'user-top-read user-read-recently-played';
+  const SCOPES = 'user-top-read user-read-recently-played user-read-currently-playing';
   const AUTH_KEY = 'ss-auth';
   const PKCE_KEY = 'ss-pkce';
 
@@ -27,6 +27,7 @@ const Spotify = (() => {
     auth = {
       access: t.access_token,
       refresh: t.refresh_token || (auth && auth.refresh),
+      scope: t.scope || (auth && auth.scope) || '',
       exp: Date.now() + (t.expires_in - 60) * 1000,
     };
     write(AUTH_KEY, auth);
@@ -120,6 +121,7 @@ const Spotify = (() => {
   return {
     login, handleRedirect, api, logout, redirectUri,
     get loggedIn() { return !!auth; },
+    hasScope: s => !!auth && (auth.scope || '').split(' ').includes(s),
     get configured() { return !!CONFIG.spotifyClientId; },
   };
 })();

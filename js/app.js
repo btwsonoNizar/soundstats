@@ -142,10 +142,15 @@ function sanitizeFilter() {
 /* Componenti HTML                                                     */
 /* ------------------------------------------------------------------ */
 
+// Segnaposto per foto/copertina, riempito da Images.hydrate().
+const pic = (kind, name, sub, cls = '', size = '') =>
+  `<span class="pic ${kind === 'artists' ? 'round ' : ''}${cls}" data-k="${kind}" data-n="${esc(name)}" data-s="${esc(sub || '')}"${size ? ` data-size="${size}"` : ''}></span>`;
+
 function rowHtml(kind, r, maxMs) {
   const pct = maxMs ? Math.max(1.5, (r.ms / maxMs) * 100) : 0;
-  return `<a class="row" href="#/detail/${kind}/${r.id}">
+  return `<a class="row with-pic" href="#/detail/${kind}/${r.id}">
     <span class="rank">${r.rank}</span>
+    ${pic(kind, r.name, r.artist || r.sub, 'thumb')}
     <span class="main">
       <span class="name">${esc(r.name)}</span>
       ${r.sub ? `<span class="sub">${esc(r.sub)}</span>` : ''}
@@ -217,12 +222,28 @@ async function viewOverview(el, alive) {
   const peakH = o.byHour.indexOf(Math.max(...o.byHour));
   const peakD = o.byDow.indexOf(Math.max(...o.byDow));
 
+  const topA = o.topArtists[0];
   el.innerHTML = `
+    <section id="np" class="np-wrap"></section>
     <section class="hero">
-      <span class="hero-label">Tempo di ascolto · ${esc(periodLabel())}</span>
-      <span class="hero-num">${fmtHours(o.totalMs)}<small> ore</small></span>
-      <span class="hero-sub">${fmtMin(o.totalMs)} minuti · ${plays(o.plays)} · ${fmtMin(o.perDayMs)} min al giorno</span>
+      ${topA ? pic('artists', topA.name, '', 'hero-bg', 'l') : ''}
+      <div class="hero-body">
+        <span class="hero-label">Tempo di ascolto · ${esc(periodLabel())}</span>
+        <span class="hero-num">${fmtHours(o.totalMs)}<small> ore</small></span>
+        <span class="hero-sub">${fmtMin(o.totalMs)} minuti · ${plays(o.plays)} · ${fmtMin(o.perDayMs)} min al giorno</span>
+        ${topA ? `<a class="hero-top" href="#/detail/artists/${topA.id}">${pic('artists', topA.name, '', 'mini')}<span><small>Il tuo artista n.1</small><b>${esc(topA.name)}</b></span><em>${fmtHours(topA.ms)} h</em></a>` : ''}
+      </div>
     </section>
+    ${o.topArtists.length ? `<section class="shelf">
+      <div class="card-head"><h2>Artisti più ascoltati</h2><a class="more" href="#/artists">Vedi tutti</a></div>
+      <div class="carousel">${o.topArtists.map(r => `<a class="tile-pic" href="#/detail/artists/${r.id}">
+        ${pic('artists', r.name, '', 'cover')}<b>${esc(r.name)}</b><small>${fmtHours(r.ms)} h · #${r.rank}</small></a>`).join('')}</div>
+    </section>` : ''}
+    ${o.topAlbums.length ? `<section class="shelf">
+      <div class="card-head"><h2>Album più ascoltati</h2><a class="more" href="#/albums">Vedi tutti</a></div>
+      <div class="carousel">${o.topAlbums.map(r => `<a class="tile-pic" href="#/detail/albums/${r.id}">
+        ${pic('albums', r.name, r.sub, 'cover')}<b>${esc(r.name)}</b><small>${esc(r.sub)}</small></a>`).join('')}</div>
+    </section>` : ''}
     <section class="tiles">
       ${tile('Musica', fmtHours(o.musicMs) + ' h', fmtMin(o.musicMs) + ' min')}
       ${tile('Podcast', fmtHours(o.podMs) + ' h', fmtMin(o.podMs) + ' min')}
@@ -247,10 +268,6 @@ async function viewOverview(el, alive) {
       <div id="chDays"></div>
     </section>
     <section class="card list-card">
-      <div class="card-head"><h2>Top artisti</h2><a class="more" href="#/artists">Vedi tutti</a></div>
-      ${o.topArtists.map(r => rowHtml('artists', r, o.topArtists[0].ms)).join('') || '<p class="hint">Nessun artista.</p>'}
-    </section>
-    <section class="card list-card">
       <div class="card-head"><h2>Top brani</h2><a class="more" href="#/tracks">Vedi tutti</a></div>
       ${o.topTracks.map(r => rowHtml('tracks', r, o.topTracks[0].ms)).join('') || '<p class="hint">Nessun brano.</p>'}
     </section>`;
@@ -262,6 +279,83 @@ async function viewOverview(el, alive) {
   if (!o.byDay) onSeg(el, 'grp', v => { S.group = v; save('ss-group', v); drawMonths(); });
   barChart($('#chHours', el), hourItems(o.byHour), { fmt: minutesFmt, height: 140, title: 'Minuti per ora' });
   barChart($('#chDays', el), dowItems(o.byDow), { fmt: minutesFmt, height: 140, title: 'Minuti per giorno' });
+  startNowPlaying($('#np', el), alive);
+}
+
+/* ---------- In ascolto ora ---------- */
+
+let npTimer = null;
+const fmtClock = ms => { const s = Math.max(0, Math.floor(ms / 1000)); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); };
+const bigImage = imgs => {
+  const list = (imgs || []).slice().sort((a, b) => (a.width || 0) - (b.width || 0));
+  return (list.find(i => (i.width || 0) >= 280) || list[list.length - 1] || {}).url || '';
+};
+
+function startNowPlaying(box, alive) {
+  clearInterval(npTimer);
+  if (!box) return;
+  if (!Spotify.hasScope('user-read-currently-playing')) {
+    box.innerHTML = `<div class="np-card np-off">
+      <span class="np-icon">${icon('live')}</span>
+      <span class="np-info"><b>In ascolto ora</b><span>Riaccedi a Spotify una volta per vedere qui il brano che stai ascoltando.</span></span>
+      <button class="btn small" data-relogin>Attiva</button></div>`;
+    return;
+  }
+  let state = null, fetchedAt = 0, lastFetch = 0;
+
+  const paint = () => {
+    if (!state) return;
+    const pos = state.playing ? Math.min(state.duration, state.progress + (Date.now() - fetchedAt)) : state.progress;
+    const bar = box.querySelector('.np-bar i'), time = box.querySelector('.np-time');
+    if (bar) bar.style.width = (state.duration ? (pos / state.duration) * 100 : 0).toFixed(2) + '%';
+    if (time) time.textContent = `${fmtClock(pos)} / ${fmtClock(state.duration)}`;
+    if (state.playing && pos >= state.duration && Date.now() - lastFetch > 3000) load();
+  };
+
+  async function load() {
+    lastFetch = Date.now();
+    try {
+      const d = await Spotify.api('/me/player/currently-playing?additional_types=episode');
+      if (!alive()) return;
+      if (!d || !d.item) {
+        state = null;
+        const r = await cachedApi('/me/player/recently-played?limit=1').catch(() => null);
+        const last = r && r.items && r.items[0];
+        if (!alive()) return;
+        box.innerHTML = last ? `<a class="np-card" href="${esc((last.track.external_urls || {}).spotify || '#')}" target="_blank" rel="noopener">
+          <span class="np-bg" style="background-image:url('${esc(bigImage(last.track.album && last.track.album.images))}')"></span>
+          <img class="np-art" src="${esc(bigImage(last.track.album && last.track.album.images))}" alt="" referrerpolicy="no-referrer">
+          <span class="np-info"><span class="np-label">Niente in riproduzione · ultimo ascolto ${esc(ago(last.played_at))}</span>
+          <b>${esc(last.track.name)}</b><span>${esc((last.track.artists || []).map(a => a.name).join(', '))}</span></span></a>` : '';
+        return;
+      }
+      const it = d.item, ep = it.type === 'episode';
+      const img = bigImage(ep ? (it.images || (it.show && it.show.images)) : it.album && it.album.images);
+      const sub = ep ? (it.show && it.show.name) : (it.artists || []).map(a => a.name).join(', ');
+      state = { playing: d.is_playing, progress: d.progress_ms || 0, duration: it.duration_ms || 0 };
+      fetchedAt = Date.now();
+      box.innerHTML = `<a class="np-card${d.is_playing ? ' playing' : ''}" href="${esc((it.external_urls || {}).spotify || '#')}" target="_blank" rel="noopener">
+        <span class="np-bg" style="background-image:url('${esc(img)}')"></span>
+        <img class="np-art" src="${esc(img)}" alt="" referrerpolicy="no-referrer">
+        <span class="np-info">
+          <span class="np-label">${d.is_playing ? '<span class="eq"><i></i><i></i><i></i></span>In ascolto ora' : 'In pausa'}</span>
+          <b>${esc(it.name)}</b>
+          <span>${esc(sub || '')}</span>
+          <span class="np-bar"><i></i></span>
+          <span class="np-time"></span>
+        </span></a>`;
+      paint();
+    } catch (e) {
+      if (alive()) box.innerHTML = '';
+    }
+  }
+
+  load();
+  npTimer = setInterval(() => {
+    if (!alive() || !document.contains(box)) { clearInterval(npTimer); return; }
+    if (document.hidden) return;
+    if (Date.now() - lastFetch > 15000) load(); else paint();
+  }, 1000);
 }
 
 async function viewList(el, alive, kind, extraHead = '') {
@@ -317,9 +411,13 @@ async function viewDetail(el, alive, kind, id) {
 
   el.innerHTML = `
     <section class="dhead">
-      <span class="dkind">${KINDS[kind].one}</span>
-      <h2 class="dname">${esc(d.name)}</h2>
-      ${links.join('<span class="dot">·</span>')}
+      ${pic(kind, d.name, d.sub, 'dhead-bg', 'l')}
+      ${pic(kind, d.name, d.sub, 'dhead-pic', 'l')}
+      <div class="dhead-text">
+        <span class="dkind">${KINDS[kind].one}</span>
+        <h2 class="dname">${esc(d.name)}</h2>
+        <div class="dlinks">${links.join('<span class="dot">·</span>')}</div>
+      </div>
     </section>
     ${d.allPlays ? `
     <section class="tiles">
@@ -783,7 +881,15 @@ document.addEventListener('click', e => {
   if (e.target.closest('[data-import]')) $('#fileInput').click();
   else if (e.target.closest('[data-open-filter]')) openFilters();
   else if (e.target.closest('[data-close]')) closeFilters();
+  else if (e.target.closest('[data-relogin]')) Spotify.login();
 });
+
+// Riempie foto e copertine ogni volta che cambia il contenuto della pagina.
+let picFrame = 0;
+new MutationObserver(() => {
+  cancelAnimationFrame(picFrame);
+  picFrame = requestAnimationFrame(() => Images.hydrate($('#view')));
+}).observe($('#view'), { childList: true, subtree: true });
 $('#filterBtn').addEventListener('click', openFilters);
 $('#profileBtn').addEventListener('click', () => { location.hash = '#/profile'; });
 $('#backBtn').addEventListener('click', () => {

@@ -422,7 +422,7 @@ function overview({ flt }) {
     uTracks, uArtists, uAlbums, uShows, uEpisodes,
     perDayMs: totalMs / days, first, last,
     byHour, byDow, byMonth: fillMonths(months), byDay,
-    topArtists: top('artists', 5), topTracks: top('tracks', 5),
+    topArtists: top('artists', 10), topTracks: top('tracks', 5), topAlbums: top('albums', 10),
   };
 }
 
@@ -484,7 +484,7 @@ function detail({ kind, itemId: id, flt }) {
     const subKind = wantPod ? 'episodes' : 'tracks';
     res.trackKind = subKind;
     res.tracks = sub.slice(0, 20).map(([k, [v, c]], r) => ({
-      rank: r + 1, id: k, ms: v, plays: c, name: T.name[k],
+      rank: r + 1, id: k, ms: v, plays: c, name: T.name[k], artist: D.artists.name[T.artist[k]],
       sub: kind === 'artists' && T.album[k] >= 0 ? D.albums.name[T.album[k]] : '',
     }));
   }
