@@ -24,6 +24,65 @@ function compactNum(v) {
   return String(Math.round(v));
 }
 
+/*
+ * Mappe di calore (una sola tinta: più verde = più minuti).
+ * Toccando una casella, la didascalia mostra il valore.
+ */
+function heatLevel(v, max) {
+  if (!v || !max) return 0;
+  const r = Math.sqrt(v / max);
+  return r > 0.75 ? 4 : r > 0.5 ? 3 : r > 0.25 ? 2 : 1;
+}
+
+function heatLegend() {
+  return `<span class="hm-legend">meno <i class="l0"></i><i class="l1"></i><i class="l2"></i><i class="l3"></i><i class="l4"></i> più</span>`;
+}
+
+function bindHeatTips(host, caption, idle) {
+  caption.textContent = idle;
+  let cur = null;
+  const pick = e => {
+    const cell = e.target.closest && e.target.closest('[data-tip]');
+    if (!cell || cell === cur) return;
+    if (cur) cur.classList.remove('on');
+    cur = cell; cell.classList.add('on');
+    caption.textContent = cell.dataset.tip;
+  };
+  host.onpointerdown = pick;
+  host.onpointermove = pick;
+  host.onpointerleave = () => { if (cur) cur.classList.remove('on'); cur = null; caption.textContent = idle; };
+}
+
+// Giorno della settimana × ora del giorno.
+function weekHeatmap(host, values, dayLabels, dayNames, fmt, caption, idle) {
+  const max = Math.max(...values);
+  let h = '<div class="hm-week"><span></span>';
+  for (let x = 0; x < 24; x += 6) h += `<span class="hm-x" style="grid-column:${x + 2} / span 6">${x}</span>`;
+  for (let d = 0; d < 7; d++) {
+    h += `<span class="hm-y">${dayLabels[d]}</span>`;
+    for (let hr = 0; hr < 24; hr++) {
+      const v = values[d * 24 + hr];
+      h += `<i class="l${heatLevel(v, max)}" data-tip="${dayNames[d]}, ${hr}:00–${hr}:59 · ${fmt(v)}"></i>`;
+    }
+  }
+  host.innerHTML = h + '</div>' + heatLegend();
+  bindHeatTips(host, caption, idle);
+}
+
+// Calendario a colonne di settimane (lunedì in alto).
+function calendarHeatmap(host, cal, fmtDay, fmt, caption, idle) {
+  const max = Math.max(...cal.values);
+  const start = new Date(cal.start[0], cal.start[1], cal.start[2]);
+  let h = '<div class="hm-cal">';
+  for (let i = 0; i < cal.dow; i++) h += '<i class="pad"></i>';
+  cal.values.forEach((v, i) => {
+    const d = new Date(start); d.setDate(d.getDate() + i);
+    h += `<i class="l${heatLevel(v, max)}" data-tip="${fmtDay(d)} · ${fmt(v)}"></i>`;
+  });
+  host.innerHTML = h + '</div>' + heatLegend();
+  bindHeatTips(host, caption, idle);
+}
+
 function barChart(host, items, opt = {}) {
   const H = opt.height || 170;
   const padT = 10, padB = 22, padL = 34, padR = 4;

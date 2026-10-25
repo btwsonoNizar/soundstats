@@ -383,6 +383,52 @@ body:not(.is-landing) {
   .dlinks { justify-content: flex-start; }
 }
 
+/* ---------- Mappe di calore ---------- */
+.hm-week { display: grid; grid-template-columns: 30px repeat(24, minmax(0, 1fr)); gap: 2px; touch-action: pan-y; user-select: none; -webkit-user-select: none; }
+.hm-x { color: var(--text-3); font-size: 10px; padding-bottom: 2px; }
+.hm-y { color: var(--text-3); font-size: 10px; align-self: center; }
+.hm-week i, .hm-cal i, .hm-legend i { display: block; aspect-ratio: 1; border-radius: 2px; background: var(--surface-3); }
+.hm-cal { display: grid; grid-template-rows: repeat(7, auto); grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 2px; touch-action: pan-y; user-select: none; -webkit-user-select: none; }
+.hm-cal i.pad { background: none; }
+i.l1 { background: rgba(29, 185, 84, .28) !important; }
+i.l2 { background: rgba(29, 185, 84, .5) !important; }
+i.l3 { background: rgba(29, 185, 84, .75) !important; }
+i.l4 { background: var(--accent) !important; }
+.hm-week i.on, .hm-cal i.on { outline: 2px solid #fff; outline-offset: 0; }
+.hm-legend { display: flex; align-items: center; justify-content: flex-end; gap: 3px; margin-top: 10px; color: var(--text-3); font-size: 11px; }
+.hm-legend i { width: 11px; height: 11px; }
+
+/* ---------- Recap ---------- */
+.recap-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.recap-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 4px; }
+@media (min-width: 720px) { .recap-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+.recap-tile {
+  position: relative; display: flex; flex-direction: column; justify-content: flex-end; gap: 2px;
+  min-height: 132px; padding: 12px; border-radius: 16px; overflow: hidden; isolation: isolate;
+  background: linear-gradient(150deg, #1db954 0%, #127a37 55%, #0b3d1e 100%);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, .35); transition: transform .15s;
+}
+.recap-tile.k-m { background: linear-gradient(150deg, #7b5cff 0%, #4b2fb3 55%, #22155a 100%); }
+.recap-tile.k-y { background: linear-gradient(150deg, #ff8a3d 0%, #d4492b 55%, #5c1a12 100%); }
+.recap-tile::before { content: ""; position: absolute; right: -30px; top: -30px; width: 110px; height: 110px; border-radius: 50%; background: rgba(255, 255, 255, .12); z-index: -1; }
+.recap-tile:active, .recap-tile:hover { transform: translateY(-2px); }
+.recap-tile .badge { position: absolute; top: 10px; left: 10px; background: rgba(0, 0, 0, .35); color: #fff; }
+.recap-tile .badge::before { background: #fff; }
+.rt-kind { color: rgba(255, 255, 255, .8); font-size: 11px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; }
+.recap-tile b { font-size: 15px; line-height: 1.2; }
+.rt-num { font-size: 20px; font-weight: 900; }
+.recap-view { display: flex; flex-direction: column; align-items: center; gap: 16px; }
+.recap-frame { width: 100%; max-width: 380px; aspect-ratio: 9 / 16; border-radius: 18px; overflow: hidden; background: var(--surface); box-shadow: 0 20px 60px rgba(0, 0, 0, .6); display: grid; place-items: center; }
+.recap-frame img { width: 100%; height: 100%; display: block; }
+.recap-frame .loading { display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 0; }
+.recap-actions { display: flex; gap: 10px; width: 100%; max-width: 380px; }
+.recap-actions .btn { flex: 1; }
+
+/* ---------- Album mancanti ---------- */
+.album-missing { padding: 36px 8px; }
+.album-missing .pic.big { width: 96px; height: 96px; border-radius: 12px; }
+.album-missing p { max-width: 440px; }
+
 /* ---------- Pagina di accesso ---------- */
 body.is-landing .top { display: none; }
 body.is-landing main { max-width: none; padding: 0; }
@@ -458,6 +504,7 @@ body.is-landing main { max-width: none; padding: 0; }
   .tabs-brand { display: flex !important; align-items: center; gap: 10px; padding: 6px 12px 22px; font-size: 18px; font-weight: 800; }
   .tabs-brand img { border-radius: 7px; }
   .tabs .tabs-extra { display: flex !important; margin-top: auto; }
+  .tabs .tabs-recap { margin-top: 0; }
   .tabs a { flex-direction: row; justify-content: flex-start; gap: 14px; height: 46px; padding: 0 14px; border-radius: 10px; font-size: 14px; flex: none; }
   .tabs a:hover { color: var(--text); background: var(--surface); }
   .tabs a.on { background: var(--surface-2); }

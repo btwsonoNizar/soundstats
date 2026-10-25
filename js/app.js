@@ -31,7 +31,7 @@ const KINDS = {
 };
 const TITLES = {
   overview: 'Panoramica', tracks: 'Top brani', artists: 'Top artisti', albums: 'Top album',
-  podcasts: 'Podcast', profile: 'Profilo', welcome: 'Benvenuto', landing: 'SoundStats',
+  podcasts: 'Podcast', profile: 'Profilo', welcome: 'Benvenuto', landing: 'SoundStats', recap: 'Recap',
 };
 
 function load(key, def) {
@@ -234,6 +234,7 @@ async function viewOverview(el, alive) {
         ${topA ? `<a class="hero-top" href="#/detail/artists/${topA.id}">${pic('artists', topA.name, '', 'mini')}<span><small>Il tuo artista n.1</small><b>${esc(topA.name)}</b></span><em>${fmtHours(topA.ms)} h</em></a>` : ''}
       </div>
     </section>
+    <div id="recapShelf"></div>
     ${o.topArtists.length ? `<section class="shelf">
       <div class="card-head"><h2>Artisti più ascoltati</h2><a class="more" href="#/artists">Vedi tutti</a></div>
       <div class="carousel">${o.topArtists.map(r => `<a class="tile-pic" href="#/detail/artists/${r.id}">
@@ -267,6 +268,21 @@ async function viewOverview(el, alive) {
       <p class="hint">Il giorno in cui ascolti di più è il ${GIORNI[peakD]}</p>
       <div id="chDays"></div>
     </section>
+    <section class="card">
+      <div class="card-head"><h2>La tua settimana tipo</h2></div>
+      <p class="hint" id="hmWeekCap"></p>
+      <div id="hmWeek"></div>
+    </section>
+    ${o.calendar && o.calendar.values.length > 14 ? `<section class="card">
+      <div class="card-head"><h2>Calendario degli ascolti</h2></div>
+      <p class="hint" id="hmCalCap"></p>
+      <div id="hmCal"></div>
+    </section>` : ''}
+    ${o.discoveries.values.length > 1 ? `<section class="card">
+      <div class="card-head"><h2>Nuovi artisti scoperti</h2></div>
+      <p class="hint">${nf.format(o.discovered)} artisti ascoltati per la prima volta nel periodo</p>
+      <div id="chDisc"></div>
+    </section>` : ''}
     <section class="card list-card">
       <div class="card-head"><h2>Top brani</h2><a class="more" href="#/tracks">Vedi tutti</a></div>
       ${o.topTracks.map(r => rowHtml('tracks', r, o.topTracks[0].ms)).join('') || '<p class="hint">Nessun brano.</p>'}
@@ -279,7 +295,20 @@ async function viewOverview(el, alive) {
   if (!o.byDay) onSeg(el, 'grp', v => { S.group = v; save('ss-group', v); drawMonths(); });
   barChart($('#chHours', el), hourItems(o.byHour), { fmt: minutesFmt, height: 140, title: 'Minuti per ora' });
   barChart($('#chDays', el), dowItems(o.byDow), { fmt: minutesFmt, height: 140, title: 'Minuti per giorno' });
+  const minText = ms => `${fmtMin(ms)} min`;
+  const dayFmt = new Intl.DateTimeFormat('it-IT', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
+  weekHeatmap($('#hmWeek', el), o.byWeekHour, GIORNI_BREVI, GIORNI.map(g => g.charAt(0).toUpperCase() + g.slice(1)), minText,
+    $('#hmWeekCap', el), 'Tocca una casella per vedere i minuti');
+  if ($('#hmCal', el)) {
+    calendarHeatmap($('#hmCal', el), o.calendar, d => dayFmt.format(d), minText, $('#hmCalCap', el),
+      `${nf.format(o.calendar.values.filter(v => v > 0).length)} giorni con ascolti su ${nf.format(o.calendar.values.length)}`);
+  }
+  if ($('#chDisc', el)) {
+    const items = monthItems({ start: o.discoveries.start, values: o.discoveries.values.map(v => v * 60000) });
+    barChart($('#chDisc', el), items, { fmt: v => `${nf.format(Math.round(v))} artisti`, height: 140, title: 'Nuovi artisti' });
+  }
   startNowPlaying($('#np', el), alive);
+  recapShelfHtml().then(html => { if (alive() && $('#recapShelf', el)) $('#recapShelf', el).innerHTML = html; }).catch(() => {});
 }
 
 /* ---------- In ascolto ora ---------- */
@@ -378,9 +407,15 @@ async function viewList(el, alive, kind, extraHead = '') {
     const r = await call('top', { flt: wf(), kind, n: S.topN, q: S.query[kind] || '' });
     if (my !== token || !alive()) return;
     const listEl = $('#list', el);
-    if (!r.total) { listEl.innerHTML = emptyPeriod(); $('#count', el).textContent = ''; return; }
+    const fewAlbums = kind === 'albums' && S.meta.albumCoverage < 0.6;
+    if (!r.total) {
+      listEl.innerHTML = fewAlbums ? albumsMissing() : emptyPeriod();
+      $('#count', el).textContent = '';
+      return;
+    }
     $('#count', el).textContent = (S.query[kind] ? `${nf.format(r.matched)} risultati su ${nf.format(r.total)}` : `${nf.format(r.total)} in totale`) + ' · ' + periodLabel();
-    listEl.innerHTML = r.rows.map(row => rowHtml(kind, row, r.maxMs)).join('') || '<p class="hint pad">Nessun risultato per questa ricerca.</p>';
+    listEl.innerHTML = (fewAlbums && !S.query[kind] ? albumsMissing() : '') +
+      (r.rows.map(row => rowHtml(kind, row, r.maxMs)).join('') || '<p class="hint pad">Nessun risultato per questa ricerca.</p>');
   };
 
   let t;
@@ -391,6 +426,100 @@ async function viewList(el, alive, kind, extraHead = '') {
   });
   onSeg(el, 'topn', v => { S.topN = +v; save('ss-topn', S.topN); refresh(); });
   await refresh();
+}
+
+/* ---------- Album mancanti (dati base senza album) ---------- */
+
+const ALBUM_LOOKUPS = 300;
+
+function albumsMissing() {
+  return `<div class="empty album-missing">
+    <span class="pic big"></span>
+    <p><b>I tuoi file non contengono gli album</b></p>
+    <p class="hint">I "Dati dell'account" di Spotify (file <i>StreamingHistory_music</i>) hanno solo artista, titolo e durata. Gli album ci sono solo nella <b>cronologia estesa</b>.</p>
+    <button class="btn primary" data-derive-albums>Ricava gli album da Spotify</button>
+    <p class="hint small">Cerco su Spotify l'album dei tuoi ${ALBUM_LOOKUPS} brani più ascoltati: copre quasi tutto il tuo tempo di ascolto. Quando arriverà la cronologia estesa, importala per avere tutti gli album.</p>
+  </div>`;
+}
+
+const cleanQuery = s => String(s || '').replace(/["':()[\]{}]/g, ' ').replace(/\s+/g, ' ').trim();
+
+async function deriveAlbums() {
+  const r = await call('top', { flt: { from: null, to: null, minMs: 0, noSkip: false }, kind: 'tracks', n: ALBUM_LOOKUPS, q: '' });
+  const rows = r.rows.slice(), total = rows.length, items = [];
+  let done = 0, failed = 0;
+  busy(`Cerco gli album su Spotify…\n0 di ${total}`);
+  const worker = async () => {
+    while (rows.length) {
+      const row = rows.shift();
+      try {
+        const res = await Spotify.api(`/search?type=track&limit=5&q=${encodeURIComponent(`track:${cleanQuery(row.name)} artist:${cleanQuery(row.sub)}`)}`);
+        const found = ((res && res.tracks) || {}).items || [];
+        const best = found.find(it => it && (it.artists || []).some(a => a.name.toLowerCase() === row.sub.toLowerCase())) || found.find(Boolean);
+        if (best && best.album && best.album.name) items.push({ track: row.id, album: best.album.name });
+      } catch (e) {
+        failed++;
+        if (e.expired) throw e;
+      }
+      done++;
+      busy(`Cerco gli album su Spotify…\n${done} di ${total}`);
+    }
+  };
+  try {
+    await Promise.all([worker(), worker(), worker()]);
+    const res = await call('setAlbums', { items });
+    S.meta = await call('meta');
+    toast(`Trovati gli album di ${nf.format(res.set)} brani${failed ? ` (${failed} ricerche non riuscite)` : ''}`);
+  } catch (e) {
+    alert('Ricerca degli album non riuscita:\n' + e.message);
+  } finally {
+    busy(null);
+    route();
+  }
+}
+
+/* ---------- Sincronizzazione degli ascolti recenti ---------- */
+
+let syncing = false;
+async function syncLive() {
+  if (syncing || !Spotify.loggedIn || !navigator.onLine || !S.meta || !S.meta.n) return;
+  if (!Spotify.hasScope('user-read-recently-played')) return;
+  syncing = true;
+  try {
+    let after = Math.max(load('ss-sync-after', 0), S.meta.importedUntil * 1000, (S.meta.lastLive || 0) * 1000);
+    let newest = after;
+    const rows = [];
+    for (let page = 0; page < 10; page++) {
+      const r = await Spotify.api(`/me/player/recently-played?limit=50&after=${after}`);
+      const items = (r && r.items) || [];
+      for (const it of items) {
+        const tr = it.track;
+        if (!tr) continue;
+        const t = Date.parse(it.played_at);
+        if (t > newest) newest = t;
+        rows.push({
+          t: Math.floor(t / 1000), ms: tr.duration_ms, name: tr.name,
+          artist: (tr.artists && tr.artists[0] && tr.artists[0].name) || (tr.show && tr.show.name) || '',
+          album: tr.album && tr.album.name, pod: tr.type === 'episode',
+        });
+      }
+      if (items.length < 50 || !r.cursors || !r.cursors.after || +r.cursors.after <= after) break;
+      after = +r.cursors.after;
+    }
+    save('ss-sync-after', newest);
+    if (rows.length) {
+      const res = await call('addLive', { rows });
+      if (res.added) {
+        S.meta = await call('meta');
+        const v = location.hash.replace(/^#\/?/, '').split('/')[0] || 'overview';
+        if (v === 'overview' || v === 'recap') route();
+      }
+    }
+  } catch (e) {
+    /* nessuna connessione o permessi mancanti: si riprova più tardi */
+  } finally {
+    syncing = false;
+  }
 }
 
 async function viewPodcasts(el, alive) {
@@ -843,24 +972,29 @@ async function route() {
   else if (!hasData && view !== 'profile') view = 'welcome';
 
   document.body.classList.toggle('is-landing', view === 'landing');
-  const tab = view === 'detail' ? (KINDS[parts[1]] || {}).tab || lastTab : view;
-  if (TITLES[tab] && view !== 'detail' && view !== 'profile') lastTab = tab;
+  const tab = view === 'detail' ? (KINDS[parts[1]] || {}).tab || lastTab : view === 'recap' ? 'overview' : view;
+  if (TITLES[tab] && view !== 'detail' && view !== 'profile' && view !== 'recap') lastTab = tab;
   document.querySelectorAll('.tabs a').forEach(a => a.classList.toggle('on', a.dataset.tab === tab));
   $('.tabs').hidden = !hasData || view === 'landing';
   $('#title').textContent = TITLES[view] || '';
-  $('#backBtn').hidden = !(view === 'detail' || (view === 'profile' && !hasData));
-  $('#filterBtn').hidden = !hasData || view === 'profile';
+  $('#backBtn').hidden = !(view === 'detail' || view === 'recap' || (view === 'profile' && !hasData));
+  $('#filterBtn').hidden = !hasData || view === 'profile' || view === 'recap';
   $('#filterBtn span').textContent = filterChipLabel();
   $('#profileBtn').classList.toggle('on', view === 'profile');
   renderAvatar();
 
   const el = $('#view');
-  const loader = setTimeout(() => { if (alive()) el.innerHTML = '<div class="loading"><div class="spinner"></div></div>'; }, 120);
+  // Mostra lo spinner solo se la vista non ha ancora disegnato niente.
+  const before = el.firstChild;
+  const loader = setTimeout(() => {
+    if (alive() && el.firstChild === before) el.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+  }, 120);
   try {
     switch (view) {
       case 'landing': viewLanding(el); break;
       case 'welcome': viewWelcome(el); break;
       case 'profile': viewProfile(el); break;
+      case 'recap': await (parts[1] ? viewRecap(el, alive, parts[1]) : viewRecapList(el, alive)); break;
       case 'overview': await viewOverview(el, alive); break;
       case 'podcasts': await viewPodcasts(el, alive); break;
       case 'detail': await viewDetail(el, alive, parts[1], parseInt(parts[2], 10)); break;
@@ -882,6 +1016,7 @@ document.addEventListener('click', e => {
   else if (e.target.closest('[data-open-filter]')) openFilters();
   else if (e.target.closest('[data-close]')) closeFilters();
   else if (e.target.closest('[data-relogin]')) Spotify.login();
+  else if (e.target.closest('[data-derive-albums]')) deriveAlbums();
 });
 
 // Riempie foto e copertine ogni volta che cambia il contenuto della pagina.
@@ -920,5 +1055,9 @@ if ('serviceWorker' in navigator && location.protocol !== 'file:') {
   } catch (e) {
     alert('Accesso a Spotify non riuscito:\n' + e.message);
   }
-  route();
+  await route();
+  // Salva gli ascolti recenti da Spotify all'apertura e ogni 10 minuti.
+  syncLive();
+  setInterval(syncLive, 10 * 60 * 1000);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) syncLive(); });
 })();

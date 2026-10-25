@@ -18,6 +18,7 @@ importScripts('unzip.js');
 const F_SKIP = 1;        // l'ascolto è stato saltato
 const F_POD = 2;         // è un episodio di podcast
 const F_SKIPKNOWN = 4;   // il file indicava se è stato saltato
+const F_LIVE = 8;        // aggiunto dalla sincronizzazione con Spotify (durata stimata)
 
 const DB_NAME = 'soundstats';
 const STORE = 'data';
@@ -53,6 +54,7 @@ async function dbRun(mode, fn) {
 async function init() {
   try {
     D = (await dbRun('readonly', s => s.get(KEY))) || null;
+    if (D && D.importedUntil == null) { D.importedUntil = D.n ? D.t[D.n - 1] : 0; D.lastLive = 0; }
     if (D) derive();
   } catch (e) {
     D = null; // IndexedDB non disponibile: l'app funziona comunque in memoria
@@ -175,10 +177,18 @@ function addRecord(b, r) {
 }
 
 function finalize(b) {
-  const n = b.t.length;
   const tt = b.t;
-  const order = new Uint32Array(n);
-  for (let i = 0; i < n; i++) order[i] = i;
+  // Gli ascolti sincronizzati da Spotify servono solo dopo la fine dei file
+  // importati: dove i file ci sono, valgono i file (minuti reali).
+  let importedUntil = 0, lastLive = 0;
+  for (let i = 0; i < tt.length; i++) if (!(b.f[i] & F_LIVE) && tt[i] > importedUntil) importedUntil = tt[i];
+  const keep = [];
+  for (let i = 0; i < tt.length; i++) {
+    if (b.f[i] & F_LIVE) { if (tt[i] <= importedUntil) continue; if (tt[i] > lastLive) lastLive = tt[i]; }
+    keep.push(i);
+  }
+  const n = keep.length;
+  const order = Uint32Array.from(keep);
   order.sort((x, y) => tt[x] - tt[y]);
 
   const t = new Uint32Array(n), ms = new Uint32Array(n), tr = new Uint32Array(n), f = new Uint8Array(n);
@@ -187,7 +197,7 @@ function finalize(b) {
     t[k] = tt[i]; ms[k] = b.ms[i]; tr[k] = b.tr[i]; f[k] = b.f[i];
   }
   D = {
-    version: 1, n, t, ms, tr, f,
+    version: 1, n, t, ms, tr, f, importedUntil, lastLive,
     tracks: { name: b.tName, artist: Int32Array.from(b.tArtist), album: Int32Array.from(b.tAlbum) },
     artists: { name: b.aName, pod: Uint8Array.from(b.aPod) },
     albums: { name: b.alName, artist: Int32Array.from(b.alArtist) },
@@ -243,6 +253,61 @@ async function doImport({ files }) {
   return { added, dups, files: used, ignored, saved, total: D.n };
 }
 
+async function saveAll() {
+  derive();
+  cache.clear();
+  try { await dbRun('readwrite', s => s.put(D, KEY)); return true; } catch (e) { return false; }
+}
+
+// Ascolti recenti letti da Spotify: [{ t, ms, name, artist, album, pod }]
+async function addLive({ rows }) {
+  const b = makeBuilder();
+  const until = D.importedUntil || 0;
+  let added = 0;
+  for (const r of rows) {
+    if (!r || !r.name || !Number.isFinite(r.t) || r.t <= until) continue;
+    if (b.add(r.t, Math.max(0, Math.round(r.ms || 0)), String(r.name), String(r.artist || 'Artista sconosciuto'),
+      r.album ? String(r.album) : null, !!r.pod, F_LIVE) === 1) added++;
+  }
+  if (!added) return { added: 0 };
+  finalize(b);
+  await saveAll();
+  return { added };
+}
+
+// Album ricavati da Spotify per i brani che non ne hanno: [{ track, album }]
+async function setAlbums({ items }) {
+  const T = D.tracks, AL = D.albums;
+  const albumArtist = Array.from(AL.artist);
+  const map = new Map(AL.name.map((n, i) => [albumArtist[i] + '|' + n.toLowerCase(), i]));
+  let set = 0;
+  for (const { track, album } of items) {
+    if (!album || track < 0 || track >= T.name.length || T.album[track] >= 0) continue;
+    const a = T.artist[track];
+    const key = a + '|' + album.toLowerCase();
+    let al = map.get(key);
+    if (al === undefined) { al = AL.name.length; AL.name.push(album); albumArtist.push(a); map.set(key, al); }
+    T.album[track] = al;
+    set++;
+  }
+  AL.artist = Int32Array.from(albumArtist);
+  await saveAll();
+  return { set };
+}
+
+// Minuti totali per una lista di intervalli (per l'elenco dei recap).
+function totals({ ranges, minMs, noSkip }) {
+  return ranges.map(([from, to]) => {
+    const lo = lowerBound(D.t, from), hi = lowerBound(D.t, to);
+    let sum = 0;
+    for (let i = lo; i < hi; i++) {
+      if (D.ms[i] < (minMs || 0) || (noSkip && (D.f[i] & F_SKIP))) continue;
+      sum += D.ms[i];
+    }
+    return sum;
+  });
+}
+
 async function doClear() {
   D = null; X = null; cache.clear();
   try { await dbRun('readwrite', s => s.delete(KEY)); } catch (e) { /* niente da cancellare */ }
@@ -268,7 +333,10 @@ function derive() {
     }
     hour[i] = h; dow[i] = w; mon[i] = m;
   }
-  X = { hour, dow, mon };
+  // Primo ascolto di ogni artista (per il grafico delle scoperte).
+  const artistFirst = new Int32Array(D.artists.name.length).fill(-1);
+  for (let i = 0; i < n; i++) { const a = D.tracks.artist[D.tr[i]]; if (artistFirst[a] < 0) artistFirst[a] = i; }
+  X = { hour, dow, mon, artistFirst };
 }
 
 function lowerBound(arr, v) {
@@ -348,9 +416,19 @@ function meta() {
   const years = [...new Set(uniq.map(m => 2000 + Math.floor(m / 12)))];
   let hasSkip = false;
   for (let i = 0; i < D.n; i++) if (D.f[i] & F_SKIPKNOWN) { hasSkip = true; break; }
+  // Quota del tempo di musica per cui conosciamo l'album.
+  let musicMs = 0, withAlbum = 0;
+  for (let i = 0; i < D.n; i++) {
+    if (D.f[i] & F_POD) continue;
+    musicMs += D.ms[i];
+    if (D.tracks.album[D.tr[i]] >= 0) withAlbum += D.ms[i];
+  }
   return {
     n: D.n, first: D.t[0], last: D.t[D.n - 1], months: uniq, years, hasSkip,
     files: D.files, updated: D.updated,
+    hasAlbums: D.albums.name.length > 0,
+    albumCoverage: musicMs ? withAlbum / musicMs : 1,
+    importedUntil: D.importedUntil || 0, lastLive: D.lastLive || 0,
   };
 }
 
@@ -358,6 +436,7 @@ function overview({ flt }) {
   const T = D.tracks, t = D.t, ms = D.ms, f = D.f, tr = D.tr;
   const seenT = new Uint8Array(T.name.length), seenA = new Uint8Array(D.artists.name.length), seenAl = new Uint8Array(D.albums.name.length);
   const byHour = new Array(24).fill(0), byDow = new Array(7).fill(0), months = new Map();
+  const byWeekHour = new Array(7 * 24).fill(0);
   let musicMs = 0, podMs = 0, musicPlays = 0, podPlays = 0;
   let uTracks = 0, uArtists = 0, uAlbums = 0, uShows = 0, uEpisodes = 0, first = -1, last = -1;
 
@@ -380,11 +459,43 @@ function overview({ flt }) {
       const al = T.album[k];
       if (al >= 0 && !seenAl[al]) { seenAl[al] = 1; uAlbums++; }
     }
-    byHour[X.hour[i]] += v; byDow[X.dow[i]] += v;
+    byHour[X.hour[i]] += v; byDow[X.dow[i]] += v; byWeekHour[X.dow[i] * 24 + X.hour[i]] += v;
     const m = X.mon[i]; months.set(m, (months.get(m) || 0) + v);
     if (first < 0) first = t[i];
     last = t[i];
   }
+  const byMonth = fillMonths(months);
+
+  // Calendario: minuti di ogni giorno (fino a ~1 anno, fino all'ultimo giorno del periodo).
+  let calendar = null;
+  if (first >= 0) {
+    const endT = flt.to != null ? Math.min(flt.to - 1, last) : last;
+    const end = new Date(endT * 1000); end.setHours(0, 0, 0, 0);
+    const startD = new Date(end); startD.setDate(startD.getDate() - 370);
+    const firstD = new Date((flt.from != null ? Math.max(flt.from, first) : first) * 1000); firstD.setHours(0, 0, 0, 0);
+    const s = startD > firstD ? startD : firstD;
+    const keyOf = d => d.getFullYear() * 10000 + d.getMonth() * 100 + d.getDate();
+    const pos = new Map(), values = [];
+    for (const d = new Date(s); d <= end; d.setDate(d.getDate() + 1)) { pos.set(keyOf(d), values.length); values.push(0); }
+    const from = lowerBound(t, s / 1000);
+    for (let i = Math.max(lo, from); i < hi; i++) {
+      if (ms[i] < minMs || (noSkip && (f[i] & F_SKIP))) continue;
+      const p = pos.get(keyOf(new Date(t[i] * 1000)));
+      if (p !== undefined) values[p] += ms[i];
+    }
+    calendar = { start: [s.getFullYear(), s.getMonth(), s.getDate()], dow: (s.getDay() + 6) % 7, values };
+  }
+
+  // Artisti scoperti (primo ascolto in assoluto) per mese.
+  const disc = new Map();
+  let discovered = 0;
+  for (let a = 0; a < X.artistFirst.length; a++) {
+    const i = X.artistFirst[a];
+    if (i < lo || i >= hi || D.artists.pod[a]) continue;
+    discovered++;
+    disc.set(X.mon[i], (disc.get(X.mon[i]) || 0) + 1);
+  }
+  const discoveries = { start: byMonth.start, values: byMonth.values.map((_, k) => disc.get(byMonth.start + k) || 0) };
 
   const totalMs = musicMs + podMs;
   const start = flt.from != null ? flt.from : first;
@@ -402,7 +513,7 @@ function overview({ flt }) {
     const stop = new Date(lastDay * 1000);
     while (d <= stop && byDay.length < 100) {
       pos.set(dayKey(d), byDay.length);
-      byDay.push({ day: d.getDate(), month: d.getMonth(), ms: 0 });
+      byDay.push({ year: d.getFullYear(), day: d.getDate(), month: d.getMonth(), ms: 0 });
       d.setDate(d.getDate() + 1);
     }
     for (let i = lo; i < hi; i++) {
@@ -421,7 +532,7 @@ function overview({ flt }) {
     totalMs, musicMs, podMs, plays: musicPlays + podPlays, musicPlays, podPlays,
     uTracks, uArtists, uAlbums, uShows, uEpisodes,
     perDayMs: totalMs / days, first, last,
-    byHour, byDow, byMonth: fillMonths(months), byDay,
+    byHour, byDow, byMonth, byDay, byWeekHour, calendar, discoveries, discovered,
     topArtists: top('artists', 10), topTracks: top('tracks', 5), topAlbums: top('albums', 10),
   };
 }
@@ -498,6 +609,7 @@ function detail({ kind, itemId: id, flt }) {
 const needData = fn => args => { if (!D || !D.n) throw new Error('Nessun dato importato.'); return fn(args); };
 const handlers = {
   meta, import: doImport, clear: doClear,
+  addLive: needData(addLive), setAlbums: needData(setAlbums), totals: needData(totals),
   overview: needData(overview), top: needData(top), detail: needData(detail),
 };
 

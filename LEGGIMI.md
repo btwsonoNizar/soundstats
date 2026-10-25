@@ -167,6 +167,17 @@ contati due volte**. Per ricominciare da zero: ⚙️ **Impostazioni** → **Can
   orari, primo/ultimo ascolto e brani più ascoltati.
 - **Grafici**: tocca o trascina il dito sulle barre per leggere i valori.
 
+- **Recap**: ogni settimana, mese e anno concluso diventa un'immagine verticale (formato
+  storia) da salvare nelle Foto o condividere. Li trovi in homepage ("I tuoi recap").
+- **Sincronizzazione**: ogni volta che apri l'app (e ogni 10 minuti mentre è aperta)
+  SoundStats salva gli ascolti recenti letti da Spotify, così statistiche e recap restano
+  aggiornati anche dopo la data dell'esportazione. Spotify fornisce solo gli ultimi 50
+  brani: aprila almeno una volta al giorno per non perderne. Per questi ascolti la durata
+  è stimata (brano intero); quando importi una nuova esportazione vengono sostituiti dai
+  dati reali.
+- **Album**: i "Dati dell'account" non contengono gli album. Nella scheda Album puoi
+  premere **Ricava gli album da Spotify** per trovarli per i tuoi 300 brani più ascoltati.
+
 Note:
 - Gli **skip** sono presenti solo nella cronologia estesa; con i dati base l'opzione è
   disattivata.
