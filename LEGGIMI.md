@@ -178,6 +178,19 @@ contati due volte**. Per ricominciare da zero: ⚙️ **Impostazioni** → **Can
 - **Album**: i "Dati dell'account" non contengono gli album. Nella scheda Album puoi
   premere **Ricava gli album da Spotify** per trovarli per i tuoi 300 brani più ascoltati.
 
+- **Esplora** (in homepage e nel menu laterale su computer):
+  - *Oggi*: timeline degli ascolti del giorno, con navigazione ai giorni precedenti.
+  - *Un anno fa oggi*: cosa ascoltavi in questo giorno negli anni passati.
+  - *Record*: giorno record, serie di giorni consecutivi, sessione più lunga, brano in loop.
+  - *Confronta*: un periodo contro il precedente, con chi sale e chi scende.
+  - *Fissazioni*: brani e artisti ascoltati tantissimo in due settimane e poi abbandonati.
+  - *Generi*: i tuoi generi (da Spotify) e come cambiano anno per anno.
+  - *Il tuo anno*: storia animata a schermo intero, stile "Wrapped".
+- **Playlist**: dalla classifica dei brani, da un recap, dalla pagina di un artista o dalla
+  storia dell'anno puoi creare una playlist privata su Spotify.
+- **Backup**: in Profilo → "Esporta backup" salva un file `.soundstats` con tutti gli ascolti;
+  per ripristinarlo importalo come gli altri file.
+
 Note:
 - Gli **skip** sono presenti solo nella cronologia estesa; con i dati base l'opzione è
   disattivata.

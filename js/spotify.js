@@ -5,7 +5,7 @@
  * solo sul sito di Spotify e l'app riceve un token salvato sul dispositivo.
  */
 const Spotify = (() => {
-  const SCOPES = 'user-top-read user-read-recently-played user-read-currently-playing';
+  const SCOPES = 'user-top-read user-read-recently-played user-read-currently-playing playlist-modify-private playlist-modify-public';
   const AUTH_KEY = 'ss-auth';
   const PKCE_KEY = 'ss-pkce';
 
@@ -97,13 +97,17 @@ const Spotify = (() => {
     return auth.access;
   }
 
-  async function api(path, retry = true) {
-    const res = await fetch('https://api.spotify.com/v1' + path, { headers: { Authorization: 'Bearer ' + await token() } });
-    if (res.status === 401 && retry) { auth.exp = 0; return api(path, false); }
+  async function api(path, retry = true, opts = {}) {
+    const res = await fetch('https://api.spotify.com/v1' + path, {
+      method: opts.method || 'GET',
+      headers: { Authorization: 'Bearer ' + await token(), ...(opts.body ? { 'Content-Type': 'application/json' } : {}) },
+      body: opts.body ? JSON.stringify(opts.body) : undefined,
+    });
+    if (res.status === 401 && retry) { auth.exp = 0; return api(path, false, opts); }
     if (res.status === 429 && retry) {
       const wait = Math.min(+res.headers.get('Retry-After') || 2, 10);
       await new Promise(r => setTimeout(r, wait * 1000));
-      return api(path, false);
+      return api(path, false, opts);
     }
     if (res.status === 403) {
       throw new Error('Spotify ha negato l\'accesso. Controlla che il tuo account sia tra gli utenti autorizzati dell\'app su developer.spotify.com (User Management).');
@@ -120,6 +124,7 @@ const Spotify = (() => {
 
   return {
     login, handleRedirect, api, logout, redirectUri,
+    post: (path, body) => api(path, true, { method: 'POST', body }),
     get loggedIn() { return !!auth; },
     hasScope: s => !!auth && (auth.scope || '').split(' ').includes(s),
     get configured() { return !!CONFIG.spotifyClientId; },

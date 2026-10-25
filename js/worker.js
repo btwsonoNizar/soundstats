@@ -217,7 +217,10 @@ async function doImport({ files }) {
       for (const en of listZip(buf)) {
         if (isHistoryName(en.name)) sources.push({ name: baseName(en.name), read: () => inflateEntry(en) });
       }
-    } else if (/\.json$/i.test(file.name) || file.type.includes('json')) {
+    } else if (head[0] === 0x1f && head[1] === 0x8b) {
+      // Backup di SoundStats (JSON compresso con gzip)
+      sources.push({ name: file.name, read: () => new Response(file.stream().pipeThrough(new DecompressionStream('gzip'))).text() });
+    } else if (/\.(json|soundstats)$/i.test(file.name) || file.type.includes('json')) {
       sources.push({ name: file.name, read: () => file.text() });
     }
   }
@@ -234,6 +237,12 @@ async function doImport({ files }) {
     progress('Analisi file ' + (i + 1) + ' di ' + sources.length + '\n' + src.name);
     let rows;
     try { rows = JSON.parse(await src.read()); } catch (e) { ignored.push(src.name); continue; }
+    if (rows && rows.format === 'soundstats-backup') {
+      const r = addBackup(b, rows);
+      added += r.added; dups += r.dups; used++;
+      rows = null;
+      continue;
+    }
     if (!Array.isArray(rows)) { ignored.push(src.name); continue; }
     let ok = 0;
     for (let j = 0; j < rows.length; j++) {
@@ -306,6 +315,227 @@ function totals({ ranges, minMs, noSkip }) {
     }
     return sum;
   });
+}
+
+/* ---------- Esplora: ricordi, record, confronti, fissazioni ---------- */
+
+const topOf = (flt, kind, n) => {
+  const g = aggregate(flt, kind);
+  return g.ids.slice(0, n).map((id, r) => ({ rank: r + 1, id, ms: g.sum[id], plays: g.cnt[id], ...label(kind, id) }));
+};
+
+function rangeTotals(flt) {
+  const [lo, hi] = bounds(flt);
+  const T = D.tracks, seenT = new Set(), seenA = new Set();
+  let ms = 0, plays = 0;
+  for (let i = lo; i < hi; i++) {
+    const v = D.ms[i];
+    if (v < (flt.minMs || 0) || (flt.noSkip && (D.f[i] & F_SKIP))) continue;
+    ms += v; plays++;
+    if (!(D.f[i] & F_POD)) { seenT.add(D.tr[i]); seenA.add(T.artist[D.tr[i]]); }
+  }
+  return { ms, plays, uTracks: seenT.size, uArtists: seenA.size };
+}
+
+// "Un anno fa oggi": lo stesso giorno negli anni passati.
+function memories({ minMs, noSkip }) {
+  const now = new Date(), out = [];
+  for (let k = 1; k <= 20; k++) {
+    const from = new Date(now.getFullYear() - k, now.getMonth(), now.getDate());
+    if (from.getMonth() !== now.getMonth()) continue; // 29 febbraio
+    const to = new Date(from); to.setDate(to.getDate() + 1);
+    if (to / 1000 < D.t[0]) break;
+    const flt = { from: from / 1000, to: to / 1000, minMs, noSkip };
+    const tot = rangeTotals(flt);
+    if (!tot.plays) continue;
+    out.push({ years: k, date: from / 1000, ...tot, tracks: topOf(flt, 'tracks', 5), artists: topOf(flt, 'artists', 3) });
+  }
+  return out;
+}
+
+// Numero del giorno locale (per serie e record), con cache ogni 15 minuti.
+function dayNumbers(lo, hi) {
+  const out = new Int32Array(hi - lo);
+  let last = -1, val = 0;
+  for (let i = lo; i < hi; i++) {
+    const q = Math.floor(D.t[i] / 900);
+    if (q !== last) { last = q; const d = new Date(q * 900000); val = Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) / 86400000; }
+    out[i - lo] = val;
+  }
+  return out;
+}
+const dayToSec = n => { const d = new Date(n * 86400000); return new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()) / 1000; };
+
+function records({ flt }) {
+  const [lo, hi] = bounds(flt);
+  const T = D.tracks, minMs = flt.minMs || 0, noSkip = !!flt.noSkip;
+  const days = dayNumbers(lo, hi);
+  const perDay = new Map();
+  let bestDay = null, sess = null, best = null, prevEnd = -1;
+  let rep = { count: 0 }, artistDay = { ms: 0 };
+  let curDay = -1, dayTracks = new Map(), dayArtists = new Map();
+  let night = 0, total = 0;
+  const flushDay = () => {
+    for (const [k, c] of dayTracks) if (c > rep.count) rep = { count: c, track: k, day: curDay };
+    for (const [a, v] of dayArtists) if (v > artistDay.ms) artistDay = { ms: v, artist: a, day: curDay };
+  };
+  for (let i = lo; i < hi; i++) {
+    const v = D.ms[i];
+    if (v < minMs || (noSkip && (D.f[i] & F_SKIP))) continue;
+    const day = days[i - lo];
+    if (day !== curDay) { if (curDay >= 0) flushDay(); curDay = day; dayTracks = new Map(); dayArtists = new Map(); }
+    perDay.set(day, (perDay.get(day) || 0) + v);
+    total += v;
+    if (X.hour[i] < 5) night += v;
+    const k = D.tr[i];
+    if (!(D.f[i] & F_POD)) {
+      dayTracks.set(k, (dayTracks.get(k) || 0) + 1);
+      const a = T.artist[k];
+      dayArtists.set(a, (dayArtists.get(a) || 0) + v);
+    }
+    // Sessioni: ascolti separati da meno di 15 minuti.
+    const start = D.t[i] - v / 1000;
+    if (!sess || start - prevEnd > 900) {
+      if (sess && (!best || sess.end - sess.start > best.end - best.start)) best = sess;
+      sess = { start, end: D.t[i], plays: 0, ms: 0 };
+    }
+    sess.end = Math.max(sess.end, D.t[i]); sess.plays++; sess.ms += v;
+    prevEnd = Math.max(prevEnd, D.t[i]);
+  }
+  if (curDay >= 0) flushDay();
+  if (sess && (!best || sess.end - sess.start > best.end - best.start)) best = sess;
+
+  // Giorno record e serie di giorni consecutivi.
+  const dayList = [...perDay.keys()].sort((a, b) => a - b);
+  let streak = { len: 0 }, run = 0, runStart = 0;
+  for (let j = 0; j < dayList.length; j++) {
+    const d = dayList[j];
+    if (j && d === dayList[j - 1] + 1) run++; else { run = 1; runStart = d; }
+    if (run > streak.len) streak = { len: run, from: runStart, to: d };
+    const v = perDay.get(d);
+    if (!bestDay || v > bestDay.ms) bestDay = { day: d, ms: v };
+  }
+  const todayN = (() => { const n = new Date(); return Date.UTC(n.getFullYear(), n.getMonth(), n.getDate()) / 86400000; })();
+  let current = 0;
+  if (dayList.length && dayList[dayList.length - 1] >= todayN - 1) {
+    current = 1;
+    for (let j = dayList.length - 1; j > 0 && dayList[j - 1] === dayList[j] - 1; j--) current++;
+  }
+
+  // Da quando ascolti i tuoi artisti preferiti.
+  const since = topOf(flt, 'artists', 8).map(a => ({ ...a, first: D.t[X.artistFirst[a.id]] }));
+
+  return {
+    total, activeDays: dayList.length,
+    spanDays: dayList.length ? dayList[dayList.length - 1] - dayList[0] + 1 : 0,
+    bestDay: bestDay && { date: dayToSec(bestDay.day), ms: bestDay.ms },
+    streak: streak.len ? { len: streak.len, from: dayToSec(streak.from), to: dayToSec(streak.to) } : null,
+    current,
+    session: best && { start: best.start, end: best.end, plays: best.plays, ms: best.ms },
+    repeat: rep.count ? { count: rep.count, date: dayToSec(rep.day), ...label('tracks', rep.track), id: rep.track } : null,
+    artistDay: artistDay.ms ? { ms: artistDay.ms, date: dayToSec(artistDay.day), id: artistDay.artist, name: D.artists.name[artistDay.artist] } : null,
+    nightShare: total ? night / total : 0,
+    since,
+  };
+}
+
+// Confronto tra due periodi: totali e chi sale/scende in classifica.
+function compare({ a, b, kind }) {
+  const ga = aggregate(a, kind), gb = aggregate(b, kind);
+  const rankB = new Map(gb.ids.map((id, r) => [id, r + 1]));
+  const rows = ga.ids.slice(0, 50).map((id, r) => ({
+    rank: r + 1, prevRank: rankB.get(id) || 0, id, ms: ga.sum[id], plays: ga.cnt[id], prevMs: gb.sum[id], ...label(kind, id),
+  }));
+  const inA = new Set(ga.ids.slice(0, 50));
+  const dropped = gb.ids.slice(0, 20).filter(id => !inA.has(id)).slice(0, 10)
+    .map(id => ({ prevRank: rankB.get(id), id, prevMs: gb.sum[id], ms: ga.sum[id], ...label(kind, id) }));
+  return { A: rangeTotals(a), B: rangeTotals(b), rows, dropped };
+}
+
+// Fissazioni: tanti ascolti in due settimane e poi quasi più niente.
+function obsessions({ flt, kind }) {
+  const [lo, hi] = bounds(flt);
+  const T = D.tracks, minMs = flt.minMs || 0, noSkip = !!flt.noSkip;
+  if (hi <= lo) return { items: [] };
+  const W = 604800, w0 = Math.floor(D.t[lo] / W), wEnd = Math.floor(D.t[D.n - 1] / W);
+  const weeks = new Map(), totals = new Map();
+  for (let i = lo; i < hi; i++) {
+    if (D.ms[i] < minMs || (noSkip && (D.f[i] & F_SKIP)) || (D.f[i] & F_POD)) continue;
+    const id = kind === 'artists' ? T.artist[D.tr[i]] : D.tr[i];
+    const key = id * 8192 + (Math.floor(D.t[i] / W) - w0);
+    weeks.set(key, (weeks.get(key) || 0) + 1);
+    totals.set(id, (totals.get(id) || 0) + 1);
+  }
+  // Per ogni elemento: finestra di 2 settimane con più ascolti.
+  const peak = new Map();
+  for (const [key, c] of weeks) {
+    const id = Math.floor(key / 8192), w = key % 8192;
+    const c2 = c + (weeks.get(key + 1) || 0);
+    const p = peak.get(id);
+    if (!p || c2 > p.count) peak.set(id, { count: c2, week: w });
+  }
+  const minPeak = kind === 'artists' ? 25 : 10;
+  const items = [];
+  for (const [id, p] of peak) {
+    if (p.count < minPeak) continue;
+    let before = 0, after = 0;
+    // Conta prima/dopo il picco usando i totali settimanali dell'elemento.
+    for (let w = 0; w <= (wEnd - w0); w++) {
+      const c = weeks.get(id * 8192 + w);
+      if (!c) continue;
+      if (w < p.week) before += c; else if (w > p.week + 1) after += c;
+    }
+    const total = totals.get(id);
+    const weeksAfter = wEnd - w0 - (p.week + 1);
+    const share = p.count / total;
+    if (share < 0.45) continue; // ascoltato con continuità, non una fissazione
+    const status = weeksAfter < 4 ? 'in corso' : after <= p.count * 0.3 ? 'abbandonato' : 'ancora presente';
+    items.push({ id, ...label(kind, id), peak: p.count, peakFrom: (w0 + p.week) * W, total, before, after, share, status });
+  }
+  items.sort((x, y) => y.peak * y.share - x.peak * x.share);
+  return { items: items.slice(0, 30) };
+}
+
+// Minuti per anno di alcuni artisti (per l'evoluzione dei generi).
+function artistYears({ ids, flt }) {
+  const want = new Map(ids.map((id, j) => [id, j]));
+  const [lo, hi] = bounds(flt);
+  const y0 = 2000 + Math.floor(X.mon[lo] / 12), y1 = 2000 + Math.floor(X.mon[Math.max(lo, hi - 1)] / 12);
+  const years = [];
+  for (let y = y0; y <= y1; y++) years.push(y);
+  const ms = ids.map(() => new Array(years.length).fill(0));
+  for (let i = lo; i < hi; i++) {
+    if (D.ms[i] < (flt.minMs || 0) || (flt.noSkip && (D.f[i] & F_SKIP))) continue;
+    const j = want.get(D.tracks.artist[D.tr[i]]);
+    if (j === undefined) continue;
+    ms[j][2000 + Math.floor(X.mon[i] / 12) - y0] += D.ms[i];
+  }
+  return { years, ms };
+}
+
+// Backup: tutti i dati in un formato semplice da reimportare.
+function exportData() {
+  return {
+    format: 'soundstats-backup', version: 1, exported: Date.now(),
+    t: Array.from(D.t), ms: Array.from(D.ms), tr: Array.from(D.tr), f: Array.from(D.f),
+    tracks: { name: D.tracks.name, artist: Array.from(D.tracks.artist), album: Array.from(D.tracks.album) },
+    artists: { name: D.artists.name, pod: Array.from(D.artists.pod) },
+    albums: { name: D.albums.name, artist: Array.from(D.albums.artist) },
+    files: D.files,
+  };
+}
+
+function addBackup(b, bk) {
+  let added = 0, dups = 0;
+  const flags = F_SKIP | F_SKIPKNOWN | F_LIVE;
+  for (let i = 0; i < bk.t.length; i++) {
+    const k = bk.tr[i], a = bk.tracks.artist[k], al = bk.tracks.album[k];
+    const res = b.add(bk.t[i], bk.ms[i], bk.tracks.name[k], bk.artists.name[a], al >= 0 ? bk.albums.name[al] : null,
+      !!bk.artists.pod[a], bk.f[i] & flags);
+    if (res === 1) added++; else if (res === 2) dups++;
+  }
+  (bk.files || []).forEach(f => { if (!b.files.includes(f)) b.files.push(f); });
+  return { added, dups };
 }
 
 // Tutti gli ascolti di un intervallo (la timeline di un giorno), dal più recente.
@@ -627,6 +857,8 @@ const needData = fn => args => { if (!D || !D.n) throw new Error('Nessun dato im
 const handlers = {
   meta, import: doImport, clear: doClear,
   addLive: needData(addLive), setAlbums: needData(setAlbums), totals: needData(totals), day: needData(dayPlays),
+  memories: needData(memories), records: needData(records), compare: needData(compare),
+  obsessions: needData(obsessions), artistYears: needData(artistYears), exportData: needData(exportData),
   overview: needData(overview), top: needData(top), detail: needData(detail),
 };
 

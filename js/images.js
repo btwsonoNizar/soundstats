@@ -38,7 +38,7 @@ const Images = (() => {
     let q, type, target = name;
     switch (kind) {
       case 'artists': q = clean(name); type = 'artist'; break;
-      case 'tracks': q = `track:${clean(name)} artist:${clean(sub)}`; type = 'track'; break;
+      case 'tracks': case 'uri': q = `track:${clean(name)} artist:${clean(sub)}`; type = 'track'; break;
       case 'albums': q = `album:${clean(name)} artist:${clean(sub)}`; type = 'album'; break;
       case 'shows': q = clean(name); type = 'show'; break;
       case 'episodes': q = clean(sub); type = 'show'; target = sub; break; // copertina del podcast
@@ -48,7 +48,10 @@ const Images = (() => {
     const items = ((res && res[type + 's']) || {}).items || [];
     const best = items.find(it => it && norm(it.name) === norm(target)) || items.find(Boolean);
     if (!best) return null;
-    return pick(type === 'track' ? best.album && best.album.images : best.images);
+    if (kind === 'uri') return best.uri ? { u: best.uri } : null;
+    const img = pick(type === 'track' ? best.album && best.album.images : best.images);
+    if (kind === 'artists') return { ...(img || {}), g: best.genres || [] };
+    return img;
   }
 
   const keyOf = (kind, name, sub) => kind === 'episodes' ? 'shows|' + norm(sub) + '|' : kind + '|' + norm(name) + '|' + (kind === 'artists' || kind === 'shows' ? '' : norm(sub));
@@ -68,9 +71,10 @@ const Images = (() => {
     }
   }
 
-  function get(kind, name, sub = '') {
+  // opt.genres: per gli artisti servono anche i generi (assenti nelle voci vecchie).
+  function get(kind, name, sub = '', opt = {}) {
     const key = keyOf(kind, name, sub);
-    if (key in cache) return Promise.resolve(cache[key] || null);
+    if (key in cache && !(opt.genres && cache[key] && !cache[key].g)) return Promise.resolve(cache[key] || null);
     if (pending.has(key)) return pending.get(key);
     const p = new Promise(resolve => queue.push({ key, kind, name, sub, resolve }));
     pending.set(key, p);
@@ -80,7 +84,7 @@ const Images = (() => {
 
   function fill(el) {
     get(el.dataset.k, el.dataset.n, el.dataset.s || '').then(v => {
-      if (!v) { el.classList.add('none'); return; }
+      if (!v || !v.s) { el.classList.add('none'); return; }
       const url = el.dataset.size === 'l' ? v.l : v.s;
       const img = new Image();
       img.referrerPolicy = 'no-referrer';

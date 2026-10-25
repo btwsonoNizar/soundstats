@@ -29,9 +29,13 @@ const KINDS = {
   shows: { one: 'Podcast', tab: 'podcasts' },
   episodes: { one: 'Episodio', tab: 'podcasts' },
 };
+// Pagine secondarie (con pulsante indietro); FILTERED usano il filtro del periodo.
+const SUBPAGES = ['recap', 'today', 'explore', 'memories', 'records', 'compare', 'obsessions', 'genres', 'story'];
+const FILTERED = ['records', 'obsessions', 'genres'];
 const TITLES = {
   overview: 'Panoramica', tracks: 'Top brani', artists: 'Top artisti', albums: 'Top album',
   podcasts: 'Podcast', profile: 'Profilo', welcome: 'Benvenuto', landing: 'SoundStats', recap: 'Recap', today: 'Oggi',
+  explore: 'Esplora', memories: 'Un anno fa oggi', records: 'Record', compare: 'Confronta', obsessions: 'Fissazioni', genres: 'Generi', story: 'Il tuo anno',
 };
 
 function load(key, def) {
@@ -226,6 +230,7 @@ async function viewOverview(el, alive) {
   el.innerHTML = `
     <section id="np" class="np-wrap"></section>
     <div id="todayCard"></div>
+    <div id="memCard"></div>
     <section class="hero">
       ${topA ? pic('artists', topA.name, '', 'hero-bg', 'l') : ''}
       <div class="hero-body">
@@ -236,6 +241,10 @@ async function viewOverview(el, alive) {
       </div>
     </section>
     <div id="recapShelf"></div>
+    <section class="shelf">
+      <div class="card-head"><h2>Esplora</h2><a class="more" href="#/explore">Tutto</a></div>
+      ${exploreGrid(['records', 'compare', 'obsessions', 'genres', 'memories', 'story'])}
+    </section>
     ${o.topArtists.length ? `<section class="shelf">
       <div class="card-head"><h2>Artisti più ascoltati</h2><a class="more" href="#/artists">Vedi tutti</a></div>
       <div class="carousel">${o.topArtists.map(r => `<a class="tile-pic" href="#/detail/artists/${r.id}">
@@ -311,6 +320,7 @@ async function viewOverview(el, alive) {
   startNowPlaying($('#np', el), alive);
   recapShelfHtml().then(html => { if (alive() && $('#recapShelf', el)) $('#recapShelf', el).innerHTML = html; }).catch(() => {});
   todayCardHtml().then(html => { if (alive() && $('#todayCard', el)) $('#todayCard', el).innerHTML = html; }).catch(() => {});
+  memoriesCardHtml().then(html => { if (alive() && $('#memCard', el)) $('#memCard', el).innerHTML = html; }).catch(() => {});
 }
 
 /* ---------- In ascolto ora ---------- */
@@ -400,7 +410,7 @@ async function viewList(el, alive, kind, extraHead = '') {
       </label>
       ${seg('topn', [[10, 'Top 10'], [50, '50'], [100, '100']], S.topN)}
     </div>
-    <p class="count" id="count"></p>
+    <div class="count-row"><p class="count" id="count"></p>${kind === 'tracks' ? playlistButton() : ''}</div>
     <div id="list" class="list"></div>`;
 
   let token = 0;
@@ -642,6 +652,7 @@ async function viewDetail(el, alive, kind, id) {
   const d = await call('detail', { kind, itemId: id, flt: wf() });
   if (!alive()) return;
   $('#title').textContent = KINDS[kind].one;
+  S.detail = d;
 
   const links = [];
   if (d.sub) links.push(`<a class="dsub" href="#/detail/${d.subKind}/${d.subId}">${esc(d.sub)}</a>`);
@@ -655,6 +666,7 @@ async function viewDetail(el, alive, kind, id) {
         <span class="dkind">${KINDS[kind].one}</span>
         <h2 class="dname">${esc(d.name)}</h2>
         <div class="dlinks">${links.join('<span class="dot">·</span>')}</div>
+        ${kind === 'artists' && d.tracks && d.tracks.length > 1 ? playlistButton('data-artist-playlist') : ''}
       </div>
     </section>
     ${d.allPlays ? `
@@ -928,6 +940,8 @@ function viewProfile(el) {
         <dt>Aggiornato</dt><dd>${new Date(m.updated).toLocaleString('it-IT')}</dd>
       </dl>
       <details class="files"><summary>${m.files.length} file importati</summary><ul>${m.files.map(f => `<li>${esc(f)}</li>`).join('')}</ul></details>
+      <button class="btn block" data-backup>Esporta backup</button>
+      <p class="hint small">Il backup (.soundstats) contiene tutti i tuoi ascolti: per ripristinarlo, anche su un altro telefono, importalo con il pulsante qui sopra.</p>
       <button class="btn danger block" id="clearBtn">Cancella i dati importati</button>` : ''}
       ${HOWTO}
     </section>
@@ -1070,6 +1084,7 @@ let lastTab = 'overview';
 
 async function route() {
   const my = ++renderId;
+  if (storyState) { storyState.stop(); storyState = null; }
   const alive = () => my === renderId;
   const parts = location.hash.replace(/^#\/?/, '').split('/');
   let view = parts[0] || 'overview';
@@ -1081,13 +1096,13 @@ async function route() {
   else if (!hasData && view !== 'profile') view = 'welcome';
 
   document.body.classList.toggle('is-landing', view === 'landing');
-  const tab = view === 'detail' ? (KINDS[parts[1]] || {}).tab || lastTab : view === 'recap' || view === 'today' ? 'overview' : view;
-  if (TITLES[tab] && view !== 'detail' && view !== 'profile' && view !== 'recap' && view !== 'today') lastTab = tab;
+  const tab = view === 'detail' ? (KINDS[parts[1]] || {}).tab || lastTab : SUBPAGES.includes(view) ? (view === 'explore' ? 'explore' : 'overview') : view;
+  if (TITLES[tab] && view !== 'detail' && view !== 'profile' && !SUBPAGES.includes(view)) lastTab = tab;
   document.querySelectorAll('.tabs a').forEach(a => a.classList.toggle('on', a.dataset.tab === tab));
   $('.tabs').hidden = !hasData || view === 'landing';
   $('#title').textContent = TITLES[view] || '';
-  $('#backBtn').hidden = !(view === 'detail' || view === 'recap' || view === 'today' || (view === 'profile' && !hasData));
-  $('#filterBtn').hidden = !hasData || view === 'profile' || view === 'recap' || view === 'today';
+  $('#backBtn').hidden = !(view === 'detail' || SUBPAGES.includes(view) || (view === 'profile' && !hasData));
+  $('#filterBtn').hidden = !hasData || view === 'profile' || (SUBPAGES.includes(view) && !FILTERED.includes(view));
   $('#filterBtn span').textContent = filterChipLabel();
   $('#profileBtn').classList.toggle('on', view === 'profile');
   renderAvatar();
@@ -1105,6 +1120,13 @@ async function route() {
       case 'profile': viewProfile(el); break;
       case 'recap': await (parts[1] ? viewRecap(el, alive, parts[1]) : viewRecapList(el, alive)); break;
       case 'today': await viewToday(el, alive, parts[1]); break;
+      case 'explore': viewExplore(el); break;
+      case 'memories': await viewMemories(el, alive); break;
+      case 'records': await viewRecords(el, alive); break;
+      case 'compare': await viewCompare(el, alive); break;
+      case 'obsessions': await viewObsessions(el, alive); break;
+      case 'genres': await viewGenres(el, alive); break;
+      case 'story': await viewStory(el, alive, parts[1]); break;
       case 'overview': await viewOverview(el, alive); break;
       case 'podcasts': await viewPodcasts(el, alive); break;
       case 'detail': await viewDetail(el, alive, parts[1], parseInt(parts[2], 10)); break;
@@ -1127,6 +1149,12 @@ document.addEventListener('click', e => {
   else if (e.target.closest('[data-close]')) closeFilters();
   else if (e.target.closest('[data-relogin]')) Spotify.login();
   else if (e.target.closest('[data-derive-albums]')) deriveAlbums();
+  else if (e.target.closest('[data-backup]')) exportBackup();
+  else if (e.target.closest('[data-playlist]')) playlistFromTop(wf(), S.topN, `SoundStats · Top ${S.topN} brani · ${periodLabel()}`);
+  else if (e.target.closest('[data-artist-playlist]') && S.detail) {
+    createPlaylist(`SoundStats · Il meglio di ${S.detail.name}`, `I tuoi brani più ascoltati di ${S.detail.name}, creata con SoundStats.`,
+      S.detail.tracks.map(t => ({ name: t.name, artist: S.detail.name })));
+  }
 });
 
 // Riempie foto e copertine ogni volta che cambia il contenuto della pagina.

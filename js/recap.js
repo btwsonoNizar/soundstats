@@ -129,7 +129,12 @@ async function viewRecap(el, alive, key) {
         <a class="btn" id="rcDownload" download="soundstats-${key}.png">Scarica</a>
       </div>
       <p class="hint small">Su iPhone: "Condividi o salva" → "Salva immagine" per metterla nelle Foto.</p>
+      <div class="recap-actions">
+        <button class="btn" id="rcPlaylist">Crea playlist del periodo</button>
+        ${p.kind === 'y' ? `<a class="btn" href="#/story/${p.from.getFullYear()}">Guarda la storia</a>` : ''}
+      </div>
     </div>`;
+  $('#rcPlaylist', el).onclick = () => playlistFromTop(flt, 50, `SoundStats · ${p.label}`);
   const canvas = await drawRecap(p, o, prev[0]);
   if (!alive()) return;
   const blob = await new Promise(r => canvas.toBlob(r, 'image/png'));
