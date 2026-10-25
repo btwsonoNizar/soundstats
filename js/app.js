@@ -31,7 +31,7 @@ const KINDS = {
 };
 const TITLES = {
   overview: 'Panoramica', tracks: 'Top brani', artists: 'Top artisti', albums: 'Top album',
-  podcasts: 'Podcast', settings: 'Impostazioni', welcome: 'SoundStats',
+  podcasts: 'Podcast', profile: 'Profilo', welcome: 'Benvenuto', landing: 'SoundStats',
 };
 
 function load(key, def) {
@@ -368,30 +368,222 @@ const HOWTO = `
     </ol>
   </details>`;
 
+/* ---------- Profilo Spotify ---------- */
+
+function profile() { return load('ss-profile', null); }
+
+async function refreshProfile() {
+  try {
+    const me = await Spotify.api('/me');
+    const imgs = (me.images || []).slice().sort((a, b) => (a.width || 0) - (b.width || 0));
+    save('ss-profile', {
+      name: me.display_name || me.id,
+      image: (imgs.find(i => (i.width || 0) >= 64) || imgs[imgs.length - 1] || {}).url || '',
+      url: (me.external_urls || {}).spotify || '',
+    });
+    renderAvatar();
+  } catch (e) {
+    if (e.expired) { toast('Sessione Spotify scaduta: accedi di nuovo.'); route(); }
+  }
+}
+
+function avatarHtml(p, size) {
+  if (p && p.image) return `<img src="${esc(p.image)}" alt="" width="${size}" height="${size}" referrerpolicy="no-referrer">`;
+  return `<span>${esc(((p && p.name) || '?').trim().charAt(0).toUpperCase())}</span>`;
+}
+
+function renderAvatar() {
+  $('#profileBtn').innerHTML = avatarHtml(profile(), 32);
+}
+
+/* ---------- Pagina di accesso ---------- */
+
+const ICONS = {
+  rank: '<path d="M4 13h4v7H4zm6-9h4v16h-4zm6 5h4v11h-4z"/>',
+  clock: '<path d="M12 2a10 10 0 1 1 0 20 10 10 0 0 1 0-20zm0 2a8 8 0 1 0 0 16 8 8 0 0 0 0-16zm1 3v4.6l3.4 3.4-1.4 1.4-4-4V7z"/>',
+  lock: '<path d="M12 2a5 5 0 0 1 5 5v3h1a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V11a1 1 0 0 1 1-1h1V7a5 5 0 0 1 5-5zm0 2a3 3 0 0 0-3 3v3h6V7a3 3 0 0 0-3-3zm0 9a2 2 0 0 0-1 3.7V18h2v-1.3A2 2 0 0 0 12 13z"/>',
+  live: '<path d="M12 9a3 3 0 1 1 0 6 3 3 0 0 1 0-6zM6.3 6.3l1.4 1.4a6 6 0 0 0 0 8.6l-1.4 1.4a8 8 0 0 1 0-11.4zm11.4 0a8 8 0 0 1 0 11.4l-1.4-1.4a6 6 0 0 0 0-8.6zM3.5 3.5l1.4 1.4a10 10 0 0 0 0 14.2l-1.4 1.4a12 12 0 0 1 0-17zm17 0a12 12 0 0 1 0 17l-1.4-1.4a10 10 0 0 0 0-14.2z"/>',
+};
+const icon = name => `<svg viewBox="0 0 24 24" aria-hidden="true">${ICONS[name]}</svg>`;
+
+function viewLanding(el) {
+  const bars = [38, 52, 44, 70, 62, 84, 58, 76, 92, 66, 80, 100];
+  el.innerHTML = `
+    <div class="landing">
+      <header class="l-nav">
+        <span class="brand"><img src="icons/icon.svg" alt="" width="32" height="32">SoundStats</span>
+      </header>
+
+      <section class="l-hero">
+        <div class="l-copy">
+          <span class="eyebrow">Statistiche di ascolto per Spotify</span>
+          <h1>Scopri quanto ascolti <em>davvero</em>.</h1>
+          <p class="lead">Classifiche di brani, artisti, album e podcast basate sui minuti effettivamente ascoltati, calcolate dalla tua cronologia completa.</p>
+          <button class="btn spotify" id="loginBtn" ${Spotify.configured ? '' : 'disabled'}>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2a10 10 0 1 1 0 20 10 10 0 0 1 0-20zm4.6 14.4a.75.75 0 0 0-.25-1.03c-2.6-1.6-5.9-1.95-9.6-1.1a.75.75 0 1 0 .33 1.46c3.4-.78 6.3-.46 8.5.92.36.22.82.1 1.02-.25zm1.2-2.8a.94.94 0 0 0-.3-1.28c-3-1.85-7.4-2.37-10.9-1.3a.94.94 0 1 0 .55 1.79c3-.92 6.9-.47 9.4 1.08.44.27 1.02.14 1.29-.29zm.1-2.9c.32-.53.15-1.22-.38-1.54C14 7.1 8.6 6.9 5.4 7.9a1.12 1.12 0 1 0 .65 2.14c2.8-.85 7.6-.69 10.3 1.06.53.32 1.22.15 1.54-.4z"/></svg>
+            Accedi con Spotify
+          </button>
+          <p class="fine">${Spotify.configured
+            ? 'La password si inserisce solo sul sito di Spotify. SoundStats riceve unicamente il permesso di leggere le tue classifiche.'
+            : 'Accesso non ancora configurato: inserisci il Client ID in <code>js/config.js</code>.'}</p>
+        </div>
+        <div class="l-preview" aria-hidden="true">
+          <div class="pv-card">
+            <span class="pv-label">Tempo di ascolto · 2025</span>
+            <span class="pv-num">1.284<small> ore</small></span>
+            <div class="pv-bars">${bars.map(h => `<i style="height:${h}%"></i>`).join('')}</div>
+            <div class="pv-row"><b>1</b><span><em>Artista preferito</em><small>412 ore · 6.208 ascolti</small></span></div>
+            <div class="pv-row"><b>2</b><span><em>Secondo artista</em><small>187 ore · 2.931 ascolti</small></span></div>
+            <div class="pv-row"><b>3</b><span><em>Terzo artista</em><small>96 ore · 1.540 ascolti</small></span></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="l-features">
+        <article>${icon('clock')}<h3>Minuti, non solo ascolti</h3><p>Ogni classifica è ordinata per tempo realmente ascoltato, con ore, minuti e numero di riproduzioni.</p></article>
+        <article>${icon('rank')}<h3>Tutta la tua storia</h3><p>Anni di cronologia, filtri per anno, mese o date, grafici, orari e giorni preferiti.</p></article>
+        <article>${icon('live')}<h3>In tempo reale</h3><p>Le tue top di Spotify delle ultime settimane, mesi e dell'anno, e gli ultimi brani ascoltati.</p></article>
+        <article>${icon('lock')}<h3>Privato per davvero</h3><p>I file vengono analizzati sul tuo dispositivo. Nessun server, nessun dato condiviso.</p></article>
+      </section>
+
+      <section class="l-steps">
+        <h2>Come funziona</h2>
+        <ol>
+          <li><b>Accedi con Spotify</b><span>Un tocco, e l'accesso avviene sul sito ufficiale di Spotify.</span></li>
+          <li><b>Importa i tuoi dati</b><span>Carica lo .zip ricevuto da Spotify dopo aver richiesto i tuoi dati.</span></li>
+          <li><b>Esplora</b><span>Classifiche, grafici e dettagli per ogni artista, brano, album e podcast.</span></li>
+        </ol>
+      </section>
+
+      <footer class="l-foot">
+        <p>SoundStats è un progetto indipendente e non è affiliato né approvato da Spotify AB. Spotify è un marchio registrato di Spotify AB.</p>
+      </footer>
+    </div>`;
+  const btn = $('#loginBtn', el);
+  btn.addEventListener('click', () => {
+    btn.disabled = true;
+    Spotify.login().catch(e => { btn.disabled = false; alert('Impossibile avviare l\'accesso: ' + e.message); });
+  });
+}
+
 function viewWelcome(el) {
+  const p = profile();
   el.innerHTML = `
     <div class="welcome">
-      <img src="icons/icon.svg" alt="" width="88" height="88">
-      <h2>Le tue statistiche di ascolto</h2>
-      <p>Importa i file che hai scaricato da Spotify per scoprire quanto tempo hai passato ad ascoltare ogni brano, artista, album e podcast.</p>
+      <div class="welcome-avatar">${avatarHtml(p, 88)}</div>
+      <h2>${p ? 'Ciao, ' + esc(p.name.split(' ')[0]) + '!' : 'Benvenuto!'}</h2>
+      <p>Ultimo passo: importa i file che hai scaricato da Spotify per scoprire quanto tempo hai passato ad ascoltare ogni brano, artista, album e podcast.</p>
       ${importButton()}
-      <p class="note">I dati restano solo su questo telefono: nessun server, nessun login.</p>
+      <p class="note">I file vengono analizzati su questo dispositivo e non vengono inviati a nessuno.</p>
       ${HOWTO}
+      <a class="more" href="#/profile">Intanto guarda le tue top in tempo reale →</a>
     </div>`;
 }
 
-function viewSettings(el) {
-  const m = S.meta;
+/* ---------- Dati in tempo reale da Spotify ---------- */
+
+const live = { range: load('ss-live-range', 'short_term'), type: load('ss-live-type', 'tracks'), cache: new Map() };
+const RANGES = [['short_term', '4 settimane'], ['medium_term', '6 mesi'], ['long_term', '12 mesi']];
+const relTime = new Intl.RelativeTimeFormat('it', { numeric: 'auto' });
+function ago(iso) {
+  const s = (Date.now() - Date.parse(iso)) / 1000;
+  if (s < 60) return 'adesso';
+  if (s < 3600) return relTime.format(-Math.round(s / 60), 'minute');
+  if (s < 86400) return relTime.format(-Math.round(s / 3600), 'hour');
+  return relTime.format(-Math.round(s / 86400), 'day');
+}
+const smallImage = imgs => {
+  const list = (imgs || []).slice().sort((a, b) => (a.width || 0) - (b.width || 0));
+  return (list.find(i => (i.width || 0) >= 60) || list[list.length - 1] || {}).url || '';
+};
+const thumb = (url, round) => url
+  ? `<img class="thumb${round ? ' round' : ''}" src="${esc(url)}" alt="" loading="lazy" referrerpolicy="no-referrer">`
+  : `<span class="thumb${round ? ' round' : ''}"></span>`;
+
+function liveRow(rank, img, round, name, sub, right, url) {
+  return `<a class="row live" href="${esc(url || '#')}" target="_blank" rel="noopener">
+    ${rank != null ? `<span class="rank">${rank}</span>` : ''}
+    ${thumb(img, round)}
+    <span class="main"><span class="name">${esc(name)}</span>${sub ? `<span class="sub">${esc(sub)}</span>` : ''}</span>
+    ${right ? `<span class="nums"><small>${esc(right)}</small></span>` : ''}
+  </a>`;
+}
+
+async function cachedApi(path) {
+  if (!live.cache.has(path)) live.cache.set(path, Spotify.api(path).catch(e => { live.cache.delete(path); throw e; }));
+  return live.cache.get(path);
+}
+
+async function drawLiveTop(box) {
+  box.innerHTML = '<div class="loading small"><div class="spinner"></div></div>';
+  try {
+    const data = await cachedApi(`/me/top/${live.type}?time_range=${live.range}&limit=50`);
+    const items = data.items || [];
+    if (!items.length) { box.innerHTML = '<p class="hint pad">Spotify non ha ancora abbastanza ascolti per questo periodo.</p>'; return; }
+    box.innerHTML = items.map((it, i) => live.type === 'tracks'
+      ? liveRow(i + 1, smallImage(it.album && it.album.images), false, it.name,
+        (it.artists || []).map(a => a.name).join(', '), '', (it.external_urls || {}).spotify)
+      : liveRow(i + 1, smallImage(it.images), true, it.name,
+        (it.genres || []).slice(0, 2).join(', '), '', (it.external_urls || {}).spotify)).join('');
+  } catch (e) {
+    box.innerHTML = `<p class="hint pad">${esc(liveError(e))}</p>`;
+  }
+}
+
+async function drawRecent(box) {
+  box.innerHTML = '<div class="loading small"><div class="spinner"></div></div>';
+  try {
+    const data = await cachedApi('/me/player/recently-played?limit=50');
+    const items = data.items || [];
+    if (!items.length) { box.innerHTML = '<p class="hint pad">Nessun ascolto recente.</p>'; return; }
+    box.innerHTML = items.map(it => {
+      const t = it.track || {};
+      return liveRow(null, smallImage(t.album && t.album.images), false, t.name,
+        (t.artists || []).map(a => a.name).join(', '), ago(it.played_at), (t.external_urls || {}).spotify);
+    }).join('');
+  } catch (e) {
+    box.innerHTML = `<p class="hint pad">${esc(liveError(e))}</p>`;
+  }
+}
+
+function liveError(e) {
+  if (e.expired) { setTimeout(route, 1500); return 'Sessione scaduta: accedi di nuovo.'; }
+  if (!navigator.onLine) return 'Sei offline: i dati in tempo reale richiedono la connessione.';
+  return e.message;
+}
+
+/* ---------- Profilo e impostazioni ---------- */
+
+function viewProfile(el) {
+  const m = S.meta, p = profile();
   el.innerHTML = `
-    <section class="card">
-      <div class="card-head"><h2>Importa</h2></div>
-      <p class="hint">Puoi importare più file insieme o uno .zip. I file già importati vengono riconosciuti: gli ascolti doppi non vengono contati due volte.</p>
-      ${importButton(m.n ? 'Aggiungi altri file' : 'Importa file JSON o ZIP')}
-      ${HOWTO}
+    <section class="profile-head">
+      <div class="profile-avatar">${avatarHtml(p, 72)}</div>
+      <div class="profile-info">
+        <span class="dkind">Account Spotify</span>
+        <h2>${esc(p ? p.name : 'Il tuo profilo')}</h2>
+        ${p && p.url ? `<a class="more" href="${esc(p.url)}" target="_blank" rel="noopener">Apri su Spotify ↗</a>` : ''}
+      </div>
+      <button class="btn small" id="logoutBtn">Esci</button>
     </section>
-    ${m.n ? `
+
+    <section class="card list-card">
+      <div class="card-head"><h2>Le tue top su Spotify</h2><span class="badge">Live</span></div>
+      ${seg('liveType', [['tracks', 'Brani'], ['artists', 'Artisti']], live.type).replace('class="seg"', 'class="seg wide"')}
+      ${seg('liveRange', RANGES, live.range).replace('class="seg"', 'class="seg wide"')}
+      <div id="liveTop" class="list"></div>
+    </section>
+
+    <section class="card list-card">
+      <div class="card-head"><h2>Ascoltati di recente</h2><span class="badge">Live</span></div>
+      <div id="recent" class="list"></div>
+    </section>
+
     <section class="card">
-      <div class="card-head"><h2>Dati sul dispositivo</h2></div>
+      <div class="card-head"><h2>I tuoi dati</h2></div>
+      <p class="hint">Puoi importare più file insieme o uno .zip. Gli ascolti già presenti vengono riconosciuti e non sono contati due volte.</p>
+      ${importButton(m.n ? 'Aggiungi altri file' : 'Importa file JSON o ZIP')}
+      ${m.n ? `
       <dl class="facts">
         <dt>Ascolti</dt><dd>${nf.format(m.n)}</dd>
         <dt>Dal</dt><dd>${fmtDate(m.first)}</dd>
@@ -400,17 +592,34 @@ function viewSettings(el) {
         <dt>Aggiornato</dt><dd>${new Date(m.updated).toLocaleString('it-IT')}</dd>
       </dl>
       <details class="files"><summary>${m.files.length} file importati</summary><ul>${m.files.map(f => `<li>${esc(f)}</li>`).join('')}</ul></details>
-      <button class="btn danger block" id="clearBtn">Cancella tutti i dati</button>
-    </section>` : ''}
+      <button class="btn danger block" id="clearBtn">Cancella i dati importati</button>` : ''}
+      ${HOWTO}
+    </section>
+
     <section class="card">
-      <div class="card-head"><h2>Informazioni</h2></div>
-      <p class="hint">SoundStats funziona anche senza connessione. I file vengono letti sul telefono e salvati nella memoria locale dell'app; nulla viene inviato in rete.</p>
-      <p class="hint">I minuti sono quelli effettivamente ascoltati (campo <i>ms_played</i>), non la durata dei brani. Le ore e i giorni usano il fuso orario del telefono.</p>
+      <div class="card-head"><h2>Privacy</h2></div>
+      <p class="hint">I file importati vengono letti e salvati solo su questo dispositivo. L'accesso a Spotify serve a mostrare le tue top e gli ascolti recenti: SoundStats legge questi dati direttamente da Spotify e non li invia ad altri.</p>
+      <p class="hint">I minuti sono quelli effettivamente ascoltati (campo <i>ms_played</i>), non la durata dei brani. Ore e giorni usano il fuso orario del dispositivo.</p>
+      <p class="hint small">SoundStats non è affiliato né approvato da Spotify AB.</p>
     </section>`;
+
+  const topBox = $('#liveTop', el);
+  drawLiveTop(topBox);
+  drawRecent($('#recent', el));
+  onSeg(el, 'liveType', v => { live.type = v; save('ss-live-type', v); drawLiveTop(topBox); });
+  onSeg(el, 'liveRange', v => { live.range = v; save('ss-live-range', v); drawLiveTop(topBox); });
+
+  $('#logoutBtn', el).addEventListener('click', () => {
+    if (!confirm('Vuoi uscire dal tuo account Spotify? I dati importati restano su questo dispositivo.')) return;
+    Spotify.logout();
+    live.cache.clear();
+    location.hash = '#/overview';
+    route();
+  });
 
   const clear = $('#clearBtn', el);
   if (clear) clear.addEventListener('click', async () => {
-    if (!confirm('Vuoi cancellare tutti gli ascolti importati da questo telefono?')) return;
+    if (!confirm('Vuoi cancellare tutti gli ascolti importati da questo dispositivo?')) return;
     await call('clear');
     S.meta = await call('meta');
     toast('Dati cancellati');
@@ -532,24 +741,28 @@ async function route() {
 
   if (!S.meta) { S.meta = await call('meta'); sanitizeFilter(); }
   const hasData = S.meta.n > 0;
-  if (!hasData && view !== 'settings') view = 'welcome';
+  if (!Spotify.loggedIn) view = 'landing';
+  else if (!hasData && view !== 'profile') view = 'welcome';
 
+  document.body.classList.toggle('is-landing', view === 'landing');
   const tab = view === 'detail' ? (KINDS[parts[1]] || {}).tab || lastTab : view;
-  if (TITLES[tab] && view !== 'detail') lastTab = tab;
+  if (TITLES[tab] && view !== 'detail' && view !== 'profile') lastTab = tab;
   document.querySelectorAll('.tabs a').forEach(a => a.classList.toggle('on', a.dataset.tab === tab));
-  $('.tabs').hidden = !hasData;
+  $('.tabs').hidden = !hasData || view === 'landing';
   $('#title').textContent = TITLES[view] || '';
-  $('#backBtn').hidden = !(view === 'detail' || (view === 'settings' && hasData));
-  $('#filterBtn').hidden = !hasData || view === 'settings';
+  $('#backBtn').hidden = !(view === 'detail' || (view === 'profile' && !hasData));
+  $('#filterBtn').hidden = !hasData || view === 'profile';
   $('#filterBtn span').textContent = filterChipLabel();
-  $('#settingsBtn').hidden = view === 'settings';
+  $('#profileBtn').classList.toggle('on', view === 'profile');
+  renderAvatar();
 
   const el = $('#view');
   const loader = setTimeout(() => { if (alive()) el.innerHTML = '<div class="loading"><div class="spinner"></div></div>'; }, 120);
   try {
     switch (view) {
+      case 'landing': viewLanding(el); break;
       case 'welcome': viewWelcome(el); break;
-      case 'settings': viewSettings(el); break;
+      case 'profile': viewProfile(el); break;
       case 'overview': await viewOverview(el, alive); break;
       case 'podcasts': await viewPodcasts(el, alive); break;
       case 'detail': await viewDetail(el, alive, parts[1], parseInt(parts[2], 10)); break;
@@ -572,7 +785,7 @@ document.addEventListener('click', e => {
   else if (e.target.closest('[data-close]')) closeFilters();
 });
 $('#filterBtn').addEventListener('click', openFilters);
-$('#settingsBtn').addEventListener('click', () => { location.hash = '#/settings'; });
+$('#profileBtn').addEventListener('click', () => { location.hash = '#/profile'; });
 $('#backBtn').addEventListener('click', () => {
   if (history.length > 1 && route.navigated) history.back();
   else location.hash = '#/' + lastTab;
@@ -588,4 +801,18 @@ if ('serviceWorker' in navigator && location.protocol !== 'file:') {
   navigator.serviceWorker.register('sw.js').catch(() => {});
 }
 
-route();
+// Avvio: se torniamo da Spotify completa l'accesso, poi mostra la pagina giusta.
+(async () => {
+  try {
+    if (await Spotify.handleRedirect()) {
+      await refreshProfile();
+      const p = profile();
+      toast(p ? `Ciao ${p.name.split(' ')[0]}, accesso eseguito` : 'Accesso eseguito');
+    } else if (Spotify.loggedIn && navigator.onLine) {
+      refreshProfile();
+    }
+  } catch (e) {
+    alert('Accesso a Spotify non riuscito:\n' + e.message);
+  }
+  route();
+})();

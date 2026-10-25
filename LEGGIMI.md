@@ -3,8 +3,9 @@
 SoundStats è un'app per vedere le statistiche dei tuoi ascolti Spotify partendo dai file
 che hai scaricato da Spotify ("Scarica i tuoi dati"). Funziona su **Android e iPhone**.
 
-- Nessun login a Spotify, nessun server: i file vengono letti **sul telefono** e salvati
-  solo lì.
+- Si entra con **l'account Spotify**; oltre alle statistiche dai file mostra le tue top
+  attuali e gli ultimi brani ascoltati, presi in tempo reale da Spotify.
+- Nessun server: i file vengono letti **sul telefono** e salvati solo lì.
 - Una volta installata, funziona anche **senza internet**.
 
 ---
@@ -74,6 +75,31 @@ Il modo più semplice e gratuito è **GitHub Pages**. Ci vogliono circa 10 minut
 **Alternativa senza GitHub:** su **https://app.netlify.com/drop** puoi trascinare la cartella
 `SoundStats` e ottenere subito un indirizzo https. Crea un account gratuito Netlify quando
 te lo chiede, altrimenti il sito viene cancellato dopo poco tempo.
+
+---
+
+## Passo 1b – Configura l'accesso con Spotify (una volta sola)
+
+Per entrare in SoundStats si accede con Spotify. L'accesso usa il sistema ufficiale di
+Spotify (OAuth con PKCE): la password si inserisce solo sul sito di Spotify e non serve
+alcun server.
+
+Requisiti di Spotify (dal 2026): chi crea l'app deve avere **Spotify Premium**, e l'app può
+essere usata al massimo da **5 account**, da autorizzare a mano.
+
+1. Vai su **https://developer.spotify.com/dashboard** e accedi con il tuo account Spotify.
+   La prima volta accetta i termini per sviluppatori.
+2. Premi **Create app** e compila:
+   - *App name*: `SoundStats` – *App description*: `Statistiche di ascolto personali`
+   - *Redirect URIs*: `https://btwsononizar.github.io/soundstats/` (premi **Add**; la barra
+     finale è importante)
+   - *Which API/SDKs are you planning to use?*: spunta **Web API**
+   - Accetta i termini e premi **Save**.
+3. Nella pagina dell'app apri **Settings** e copia il **Client ID** (NON il Client Secret).
+4. Incolla il Client ID in `js/config.js` al posto di `''` in `spotifyClientId`, poi
+   ricarica i file su GitHub.
+5. In **User Management** aggiungi nome ed email Spotify di ogni persona che deve usare
+   l'app (massimo 5), compreso il tuo account se l'accesso viene rifiutato.
 
 ---
 
