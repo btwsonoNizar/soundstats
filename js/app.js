@@ -31,7 +31,7 @@ const KINDS = {
 };
 const TITLES = {
   overview: 'Panoramica', tracks: 'Top brani', artists: 'Top artisti', albums: 'Top album',
-  podcasts: 'Podcast', profile: 'Profilo', welcome: 'Benvenuto', landing: 'SoundStats', recap: 'Recap',
+  podcasts: 'Podcast', profile: 'Profilo', welcome: 'Benvenuto', landing: 'SoundStats', recap: 'Recap', today: 'Oggi',
 };
 
 function load(key, def) {
@@ -225,6 +225,7 @@ async function viewOverview(el, alive) {
   const topA = o.topArtists[0];
   el.innerHTML = `
     <section id="np" class="np-wrap"></section>
+    <div id="todayCard"></div>
     <section class="hero">
       ${topA ? pic('artists', topA.name, '', 'hero-bg', 'l') : ''}
       <div class="hero-body">
@@ -309,6 +310,7 @@ async function viewOverview(el, alive) {
   }
   startNowPlaying($('#np', el), alive);
   recapShelfHtml().then(html => { if (alive() && $('#recapShelf', el)) $('#recapShelf', el).innerHTML = html; }).catch(() => {});
+  todayCardHtml().then(html => { if (alive() && $('#todayCard', el)) $('#todayCard', el).innerHTML = html; }).catch(() => {});
 }
 
 /* ---------- In ascolto ora ---------- */
@@ -426,6 +428,113 @@ async function viewList(el, alive, kind, extraHead = '') {
   });
   onSeg(el, 'topn', v => { S.topN = +v; save('ss-topn', S.topN); refresh(); });
   await refresh();
+}
+
+/* ---------- Timeline "Oggi" ---------- */
+
+const dayStart = d => { const x = new Date(d); x.setHours(0, 0, 0, 0); return x; };
+const dayKeyOf = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+const clock = sec => new Date(sec * 1000).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
+const longDay = new Intl.DateTimeFormat('it-IT', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+
+function dayTitle(d) {
+  const today = dayStart(new Date());
+  const diff = Math.round((today - dayStart(d)) / 86400000);
+  if (diff === 0) return 'Oggi';
+  if (diff === 1) return 'Ieri';
+  const s = longDay.format(d);
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+async function loadDay(d) {
+  const from = dayStart(d), to = new Date(from); to.setDate(to.getDate() + 1);
+  const r = await call('day', { from: from / 1000, to: to / 1000 });
+  const music = r.items.filter(it => !it.pod);
+  const totalMs = r.items.reduce((s, it) => s + it.ms, 0);
+  const byArtist = new Map();
+  for (const it of music) {
+    const a = byArtist.get(it.artistId) || { id: it.artistId, name: it.artist, ms: 0, n: 0 };
+    a.ms += it.ms; a.n++; byArtist.set(it.artistId, a);
+  }
+  const artists = [...byArtist.values()].sort((a, b) => b.ms - a.ms);
+  const byHour = new Array(24).fill(0);
+  for (const it of r.items) byHour[new Date((it.t - it.ms / 1000) * 1000).getHours()] += it.ms;
+  return { ...r, totalMs, artists, byHour, uTracks: new Set(music.map(it => it.track)).size };
+}
+
+// Riquadro in homepage con il riassunto di oggi.
+async function todayCardHtml() {
+  const d = await loadDay(new Date());
+  const last = d.items.slice(0, 4);
+  return `<a class="today-card" href="#/today">
+    <span class="today-head"><span class="today-dot"></span><b>Oggi</b><em>Apri la timeline →</em></span>
+    ${d.items.length ? `
+    <span class="today-stats">
+      <span><b>${fmtMin(d.totalMs)}</b><small>minuti</small></span>
+      <span><b>${nf.format(d.items.length)}</b><small>ascolti</small></span>
+      <span><b>${nf.format(d.artists.length)}</b><small>artisti</small></span>
+    </span>
+    <span class="today-covers">${last.map(it => pic(it.pod ? 'episodes' : 'tracks', it.name, it.artist, 'cover-s')).join('')}
+      <small>Ultimo: ${esc(last[0].name)} · ${clock(last[0].t)}</small></span>`
+    : '<span class="hint">Ancora nessun ascolto oggi. Quello che ascolti su Spotify comparirà qui.</span>'}
+  </a>`;
+}
+
+async function viewToday(el, alive, key) {
+  const d = key ? new Date(key + 'T00:00') : new Date();
+  const isToday = dayKeyOf(d) === dayKeyOf(new Date());
+  if (isToday) await syncLive(); // prima prende gli ultimi ascolti da Spotify
+  const day = await loadDay(d);
+  if (!alive()) return;
+  const prev = new Date(d); prev.setDate(prev.getDate() - 1);
+  const next = new Date(d); next.setDate(next.getDate() + 1);
+  $('#title').textContent = dayTitle(d);
+
+  // Raggruppa gli ascolti per ora.
+  let lastHour = null, timeline = '';
+  for (const it of day.items) {
+    const start = it.t - it.ms / 1000, h = new Date(start * 1000).getHours();
+    if (h !== lastHour) { timeline += `<li class="tl-hour"><span>${String(h).padStart(2, '0')}:00</span></li>`; lastHour = h; }
+    const kind = it.pod ? 'episodes' : 'tracks';
+    timeline += `<li class="tl-item${it.skip ? ' skipped' : ''}">
+      <time>${clock(start)}</time>
+      <span class="tl-dot"></span>
+      <a class="tl-body" href="#/detail/${kind}/${it.track}">
+        ${pic(kind, it.name, it.artist, 'thumb')}
+        <span class="main"><span class="name">${esc(it.name)}</span><span class="sub">${esc(it.artist)}${it.album ? ' · ' + esc(it.album) : ''}</span></span>
+        <span class="tl-dur">${fmtClock(it.ms)}${it.skip ? '<small>saltato</small>' : ''}</span>
+      </a>
+    </li>`;
+  }
+
+  const topA = day.artists[0];
+  el.innerHTML = `
+    <div class="day-nav">
+      <a class="icon-btn" href="#/today/${dayKeyOf(prev)}" aria-label="Giorno precedente"><svg viewBox="0 0 24 24"><path d="M15.4 5.4 14 4l-8 8 8 8 1.4-1.4L8.8 12z"/></svg></a>
+      <span><b>${esc(dayTitle(d))}</b>${dayTitle(d).length < 6 ? `<small>${esc(longDay.format(d))}</small>` : ''}</span>
+      ${isToday ? '<span class="icon-btn"></span>' : `<a class="icon-btn" href="#/today/${dayKeyOf(next)}" aria-label="Giorno successivo"><svg viewBox="0 0 24 24"><path d="M8.6 5.4 10 4l8 8-8 8-1.4-1.4 6.6-6.6z"/></svg></a>`}
+    </div>
+    ${isToday ? '<section id="np" class="np-wrap"></section>' : ''}
+    ${day.items.length ? `
+    <section class="tiles">
+      ${tile('Tempo di ascolto', fmtMin(day.totalMs) + ' min', fmtHours(day.totalMs) + ' h')}
+      ${tile('Ascolti', nf.format(day.items.length), nf.format(day.uTracks) + ' brani diversi')}
+      ${topA ? `<a class="tile tile-artist" href="#/detail/artists/${topA.id}">${pic('artists', topA.name, '', 'mini')}<span class="tile-label">Artista del giorno</span><span class="tile-value">${esc(topA.name)}</span><span class="tile-sub">${fmtMin(topA.ms)} min · ${plays(topA.n)}</span></a>` : ''}
+    </section>
+    <section class="card">
+      <div class="card-head"><h2>Durante la giornata</h2></div>
+      <div id="chDay"></div>
+    </section>
+    <section class="card">
+      <div class="card-head"><h2>Timeline</h2></div>
+      <ol class="timeline">${timeline}</ol>
+    </section>` : `<div class="empty"><p>${isToday ? 'Ancora nessun ascolto oggi.' : 'Nessun ascolto in questo giorno.'}</p></div>`}
+    ${isToday ? '<p class="hint small">Spotify fornisce solo gli ultimi 50 brani ascoltati: apri SoundStats almeno una volta al giorno per non perderne. La durata degli ascolti di oggi è stimata (brano intero).</p>' : ''}`;
+
+  if (day.items.length) {
+    barChart($('#chDay', el), hourItems(day.byHour), { fmt: minutesFmt, height: 130, title: 'Minuti per ora' });
+  }
+  if (isToday) startNowPlaying($('#np', el), alive);
 }
 
 /* ---------- Album mancanti (dati base senza album) ---------- */
@@ -972,13 +1081,13 @@ async function route() {
   else if (!hasData && view !== 'profile') view = 'welcome';
 
   document.body.classList.toggle('is-landing', view === 'landing');
-  const tab = view === 'detail' ? (KINDS[parts[1]] || {}).tab || lastTab : view === 'recap' ? 'overview' : view;
-  if (TITLES[tab] && view !== 'detail' && view !== 'profile' && view !== 'recap') lastTab = tab;
+  const tab = view === 'detail' ? (KINDS[parts[1]] || {}).tab || lastTab : view === 'recap' || view === 'today' ? 'overview' : view;
+  if (TITLES[tab] && view !== 'detail' && view !== 'profile' && view !== 'recap' && view !== 'today') lastTab = tab;
   document.querySelectorAll('.tabs a').forEach(a => a.classList.toggle('on', a.dataset.tab === tab));
   $('.tabs').hidden = !hasData || view === 'landing';
   $('#title').textContent = TITLES[view] || '';
-  $('#backBtn').hidden = !(view === 'detail' || view === 'recap' || (view === 'profile' && !hasData));
-  $('#filterBtn').hidden = !hasData || view === 'profile' || view === 'recap';
+  $('#backBtn').hidden = !(view === 'detail' || view === 'recap' || view === 'today' || (view === 'profile' && !hasData));
+  $('#filterBtn').hidden = !hasData || view === 'profile' || view === 'recap' || view === 'today';
   $('#filterBtn span').textContent = filterChipLabel();
   $('#profileBtn').classList.toggle('on', view === 'profile');
   renderAvatar();
@@ -995,6 +1104,7 @@ async function route() {
       case 'welcome': viewWelcome(el); break;
       case 'profile': viewProfile(el); break;
       case 'recap': await (parts[1] ? viewRecap(el, alive, parts[1]) : viewRecapList(el, alive)); break;
+      case 'today': await viewToday(el, alive, parts[1]); break;
       case 'overview': await viewOverview(el, alive); break;
       case 'podcasts': await viewPodcasts(el, alive); break;
       case 'detail': await viewDetail(el, alive, parts[1], parseInt(parts[2], 10)); break;

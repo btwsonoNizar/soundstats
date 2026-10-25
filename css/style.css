@@ -424,6 +424,50 @@ i.l4 { background: var(--accent) !important; }
 .recap-actions { display: flex; gap: 10px; width: 100%; max-width: 380px; }
 .recap-actions .btn { flex: 1; }
 
+/* ---------- Oggi ---------- */
+.today-card {
+  display: flex; flex-direction: column; gap: 12px; margin-bottom: 16px; padding: 16px;
+  border-radius: 18px; background: linear-gradient(135deg, #1e2a22 0%, var(--surface) 70%);
+  border: 1px solid rgba(29, 185, 84, .18);
+}
+.today-head { display: flex; align-items: center; gap: 8px; }
+.today-head b { font-size: 17px; }
+.today-head em { margin-left: auto; font-style: normal; color: var(--accent); font-size: 13px; font-weight: 700; }
+.today-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 4px rgba(29, 185, 84, .2); animation: pulse 2s ease-in-out infinite; }
+@keyframes pulse { 50% { box-shadow: 0 0 0 7px rgba(29, 185, 84, 0); } }
+.today-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.today-stats span { display: flex; flex-direction: column; }
+.today-stats b { font-size: 24px; font-weight: 900; font-variant-numeric: tabular-nums; }
+.today-stats small { color: var(--text-2); font-size: 12px; }
+.today-covers { display: flex; align-items: center; min-width: 0; }
+.today-covers .pic.cover-s { width: 40px; height: 40px; border-radius: 6px; margin-right: -10px; border: 2px solid var(--surface); box-shadow: 0 4px 10px rgba(0, 0, 0, .4); }
+.today-covers small { margin-left: 20px; color: var(--text-2); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+
+.day-nav { display: grid; grid-template-columns: 40px 1fr 40px; align-items: center; gap: 8px; margin-bottom: 14px; }
+.day-nav > span:not(.icon-btn) { display: flex; flex-direction: column; align-items: center; text-align: center; }
+.day-nav b { font-size: 20px; font-weight: 800; }
+.day-nav small { color: var(--text-2); font-size: 12px; }
+.day-nav a.icon-btn { background: var(--surface-2); color: var(--text); }
+.tile-artist { display: grid; grid-template-columns: 40px minmax(0, 1fr); column-gap: 10px; align-items: center; grid-column: span 2; }
+.tile-artist .pic.mini { width: 40px; height: 40px; grid-row: span 3; }
+@media (min-width: 560px) { .tile-artist { grid-column: auto; } }
+
+.timeline { list-style: none; margin: 0; padding: 0; position: relative; }
+.timeline::before { content: ""; position: absolute; left: 51px; top: 6px; bottom: 6px; width: 2px; background: var(--surface-3); border-radius: 1px; }
+.tl-hour { padding: 14px 0 6px 64px; }
+.tl-hour:first-child { padding-top: 2px; }
+.tl-hour span { color: var(--accent); font-size: 12px; font-weight: 800; letter-spacing: .06em; }
+.tl-item { display: grid; grid-template-columns: 40px 24px minmax(0, 1fr); align-items: center; }
+.tl-item time { color: var(--text-2); font-size: 12px; font-variant-numeric: tabular-nums; text-align: right; padding-right: 2px; }
+.tl-dot { justify-self: center; width: 10px; height: 10px; border-radius: 50%; background: var(--accent); border: 2px solid var(--surface); position: relative; z-index: 1; }
+.tl-item.skipped .tl-dot { background: var(--text-3); }
+.tl-item.skipped .name { color: var(--text-2); }
+.tl-body { display: grid; grid-template-columns: 44px minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 6px 6px; border-radius: 10px; min-width: 0; }
+.tl-body:active, .tl-body:hover { background: var(--surface-2); }
+.tl-body .pic.thumb { width: 44px; height: 44px; }
+.tl-dur { display: flex; flex-direction: column; align-items: flex-end; color: var(--text-2); font-size: 12px; font-variant-numeric: tabular-nums; }
+.tl-dur small { color: var(--text-3); font-size: 10px; }
+
 /* ---------- Album mancanti ---------- */
 .album-missing { padding: 36px 8px; }
 .album-missing .pic.big { width: 96px; height: 96px; border-radius: 12px; }

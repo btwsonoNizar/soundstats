@@ -308,6 +308,23 @@ function totals({ ranges, minMs, noSkip }) {
   });
 }
 
+// Tutti gli ascolti di un intervallo (la timeline di un giorno), dal più recente.
+function dayPlays({ from, to }) {
+  const T = D.tracks;
+  const lo = lowerBound(D.t, from), hi = lowerBound(D.t, to);
+  const items = [];
+  for (let i = hi - 1; i >= lo && items.length < 1000; i--) {
+    const k = D.tr[i], al = T.album[k], fl = D.f[i];
+    items.push({
+      t: D.t[i], ms: D.ms[i], track: k, name: T.name[k],
+      artistId: T.artist[k], artist: D.artists.name[T.artist[k]],
+      albumId: al, album: al >= 0 ? D.albums.name[al] : '',
+      pod: !!(fl & F_POD), skip: !!(fl & F_SKIP), live: !!(fl & F_LIVE),
+    });
+  }
+  return { items, first: D.t[0], last: D.t[D.n - 1] };
+}
+
 async function doClear() {
   D = null; X = null; cache.clear();
   try { await dbRun('readwrite', s => s.delete(KEY)); } catch (e) { /* niente da cancellare */ }
@@ -609,7 +626,7 @@ function detail({ kind, itemId: id, flt }) {
 const needData = fn => args => { if (!D || !D.n) throw new Error('Nessun dato importato.'); return fn(args); };
 const handlers = {
   meta, import: doImport, clear: doClear,
-  addLive: needData(addLive), setAlbums: needData(setAlbums), totals: needData(totals),
+  addLive: needData(addLive), setAlbums: needData(setAlbums), totals: needData(totals), day: needData(dayPlays),
   overview: needData(overview), top: needData(top), detail: needData(detail),
 };
 
