@@ -4,7 +4,7 @@
  * si apre anche offline. Quando pubblichi una nuova versione, cambia
  * il numero in CACHE (es. v2) per forzare l'aggiornamento.
  */
-const CACHE = 'soundstats-v6';
+const CACHE = 'soundstats-v7';
 const ASSETS = [
   './',
   'index.html',
@@ -12,6 +12,7 @@ const ASSETS = [
   'js/config.js',
   'js/spotify.js',
   'js/images.js',
+  'js/cloud.js',
   'js/app.js',
   'js/charts.js',
   'js/recap.js',
@@ -41,7 +42,9 @@ self.addEventListener('activate', e => {
 // Prima la copia salvata (veloce, funziona offline), poi aggiorna in background.
 self.addEventListener('fetch', e => {
   const req = e.request;
-  if (req.method !== 'GET' || new URL(req.url).origin !== location.origin) return;
+  const url = new URL(req.url);
+  // Le API (sincronizzazione) vanno sempre in rete, mai in cache.
+  if (req.method !== 'GET' || url.origin !== location.origin || url.pathname.includes('/api/')) return;
   const key = req.mode === 'navigate' ? 'index.html' : req;
   e.respondWith(
     caches.open(CACHE).then(async cache => {

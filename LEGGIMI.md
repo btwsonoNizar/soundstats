@@ -188,6 +188,7 @@ contati due volte**. Per ricominciare da zero: ⚙️ **Impostazioni** → **Can
   - *Il tuo anno*: storia animata a schermo intero, stile "Wrapped".
 - **Playlist**: dalla classifica dei brani, da un recap, dalla pagina di un artista o dalla
   storia dell'anno puoi creare una playlist privata su Spotify.
+- **Sincronizzazione**: dopo l'import, una copia dei dati viene salvata sul server (legata al tuo account Spotify): accedendo da un altro dispositivo i dati vengono scaricati da soli. In Profilo puoi sincronizzare a mano o eliminare la copia online.
 - **Backup**: in Profilo → "Esporta backup" salva un file `.soundstats` con tutti gli ascolti;
   per ripristinarlo importalo come gli altri file.
 

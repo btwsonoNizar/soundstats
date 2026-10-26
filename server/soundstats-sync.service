@@ -1,0 +1,19 @@
+[Unit]
+Description=SoundStats - sincronizzazione tra dispositivi
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=ubuntu
+WorkingDirectory=/home/ubuntu/soundstats-sync
+Environment=SYNC_DATA=/home/ubuntu/soundstats-sync/data
+ExecStart=/usr/bin/python3 /home/ubuntu/soundstats-sync/sync_server.py
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/home/ubuntu/soundstats-sync/data
+
+[Install]
+WantedBy=multi-user.target

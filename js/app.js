@@ -589,6 +589,8 @@ async function deriveAlbums() {
     const res = await call('setAlbums', { items });
     S.meta = await call('meta');
     toast(`Trovati gli album di ${nf.format(res.set)} brani${failed ? ` (${failed} ricerche non riuscite)` : ''}`);
+    Cloud.markDirty();
+    Cloud.sync({ force: true }).catch(() => {});
   } catch (e) {
     alert('Ricerca degli album non riuscita:\n' + e.message);
   } finally {
@@ -629,6 +631,7 @@ async function syncLive() {
     if (rows.length) {
       const res = await call('addLive', { rows });
       if (res.added) {
+        Cloud.markDirty();
         S.meta = await call('meta');
         const v = location.hash.replace(/^#\/?/, '').split('/')[0] || 'overview';
         if (v === 'overview' || v === 'recap') route();
@@ -791,7 +794,7 @@ function viewLanding(el) {
         <article>${icon('clock')}<h3>Minuti, non solo ascolti</h3><p>Ogni classifica è ordinata per tempo realmente ascoltato, con ore, minuti e numero di riproduzioni.</p></article>
         <article>${icon('rank')}<h3>Tutta la tua storia</h3><p>Anni di cronologia, filtri per anno, mese o date, grafici, orari e giorni preferiti.</p></article>
         <article>${icon('live')}<h3>In tempo reale</h3><p>Le tue top di Spotify delle ultime settimane, mesi e dell'anno, e gli ultimi brani ascoltati.</p></article>
-        <article>${icon('lock')}<h3>Privato per davvero</h3><p>I file vengono analizzati sul tuo dispositivo. Nessun server, nessun dato condiviso.</p></article>
+        <article>${icon('lock')}<h3>Tuo, ovunque</h3><p>I file vengono analizzati sul tuo dispositivo. Una copia, visibile solo a te tramite Spotify, ti segue su tutti i tuoi dispositivi.</p></article>
       </section>
 
       <section class="l-steps">
@@ -822,7 +825,7 @@ function viewWelcome(el) {
       <h2>${p ? 'Ciao, ' + esc(p.name.split(' ')[0]) + '!' : 'Benvenuto!'}</h2>
       <p>Ultimo passo: importa i file che hai scaricato da Spotify per scoprire quanto tempo hai passato ad ascoltare ogni brano, artista, album e podcast.</p>
       ${importButton()}
-      <p class="note">I file vengono analizzati su questo dispositivo e non vengono inviati a nessuno.</p>
+      <p class="note">Basta farlo una volta: sui tuoi altri dispositivi i dati arrivano da soli dopo il login.</p>
       ${HOWTO}
       <a class="more" href="#/profile">Intanto guarda le tue top in tempo reale →</a>
     </div>`;
@@ -946,9 +949,17 @@ function viewProfile(el) {
       ${HOWTO}
     </section>
 
+    <section class="card" id="cloudCard" hidden>
+      <div class="card-head"><h2>Sincronizzazione</h2><span class="badge">Attiva</span></div>
+      <p class="hint">I tuoi dati sono salvati anche online, legati al tuo account Spotify: accedi da un altro dispositivo e li ritrovi senza reimportare nulla.</p>
+      <dl class="facts" id="cloudFacts"></dl>
+      <button class="btn block" data-cloud-sync>Sincronizza ora</button>
+      <button class="btn danger block" data-cloud-delete>Elimina la copia online</button>
+    </section>
+
     <section class="card">
       <div class="card-head"><h2>Privacy</h2></div>
-      <p class="hint">I file importati vengono letti e salvati solo su questo dispositivo. L'accesso a Spotify serve a mostrare le tue top e gli ascolti recenti: SoundStats legge questi dati direttamente da Spotify e non li invia ad altri.</p>
+      <p class="hint">I file importati vengono analizzati su questo dispositivo. Una copia dei tuoi ascolti viene salvata sul server di SoundStats per ritrovarla sugli altri tuoi dispositivi: è accessibile solo con il tuo account Spotify e puoi eliminarla quando vuoi. L'accesso a Spotify serve anche a mostrare le tue top e gli ascolti recenti.</p>
       <p class="hint">I minuti sono quelli effettivamente ascoltati (campo <i>ms_played</i>), non la durata dei brani. Ore e giorni usano il fuso orario del dispositivo.</p>
       <p class="hint small">SoundStats non è affiliato né approvato da Spotify AB.</p>
     </section>`;
@@ -967,12 +978,28 @@ function viewProfile(el) {
     route();
   });
 
+  // Stato della sincronizzazione (solo dove il server è disponibile).
+  Cloud.meta().then(cm => {
+    if (!cm || !document.contains(el)) return;
+    const st = Cloud.status();
+    $('#cloudCard', el).hidden = false;
+    $('#cloudFacts', el).innerHTML = cm.exists
+      ? `<dt>Copia online</dt><dd>${nf.format(cm.rows || 0)} ascolti</dd>
+         <dt>Dimensione</dt><dd>${(cm.size || 0) < 1048576 ? nf.format(Math.ceil((cm.size || 0) / 1024)) + ' KB' : nf1.format(cm.size / 1048576) + ' MB'}</dd>
+         <dt>Ultimo salvataggio</dt><dd>${new Date(cm.updated).toLocaleString('it-IT')}</dd>
+         <dt>Da</dt><dd>${cm.device === load('ss-device', '') ? 'questo dispositivo' : 'un altro dispositivo'}</dd>
+         ${st.dirty ? '<dt>Modifiche locali</dt><dd>da caricare</dd>' : ''}`
+      : '<dt>Copia online</dt><dd>non ancora salvata</dd>';
+  }).catch(() => {});
+
   const clear = $('#clearBtn', el);
   if (clear) clear.addEventListener('click', async () => {
     if (!confirm('Vuoi cancellare tutti gli ascolti importati da questo dispositivo?')) return;
+    const online = Cloud.status().available && confirm('Vuoi eliminare anche la copia salvata online?\n\nSe non la elimini, i dati torneranno su questo dispositivo alla prossima apertura.');
     await call('clear');
+    if (online) await Cloud.remove().catch(() => {});
     S.meta = await call('meta');
-    toast('Dati cancellati');
+    toast(online ? 'Dati cancellati, anche online' : 'Dati cancellati da questo dispositivo');
     location.hash = '#/overview';
     route();
   });
@@ -1067,6 +1094,7 @@ async function doImport(files) {
     if (r.ignored.length) msg += `. File non riconosciuti: ${r.ignored.length}`;
     if (!r.saved) msg += '. Attenzione: non è stato possibile salvarli in memoria.';
     toast(msg);
+    Cloud.sync({ force: true }).catch(() => {});
     if (location.hash === '#/overview') route(); else location.hash = '#/overview';
   } catch (e) {
     alert('Importazione non riuscita:\n' + e.message);
@@ -1150,6 +1178,15 @@ document.addEventListener('click', e => {
   else if (e.target.closest('[data-relogin]')) Spotify.login();
   else if (e.target.closest('[data-derive-albums]')) deriveAlbums();
   else if (e.target.closest('[data-backup]')) exportBackup();
+  else if (e.target.closest('[data-cloud-sync]')) {
+    Cloud.sync({ force: true, quiet: false })
+      .then(() => { toast('Sincronizzazione completata'); route(); })
+      .catch(err => alert('Sincronizzazione non riuscita: ' + err.message));
+  } else if (e.target.closest('[data-cloud-delete]')) {
+    if (confirm('Eliminare la copia dei tuoi dati salvata online? I dati su questo dispositivo restano.')) {
+      Cloud.remove().then(() => { toast('Copia online eliminata'); route(); }).catch(err => alert(err.message));
+    }
+  }
   else if (e.target.closest('[data-playlist]')) playlistFromTop(wf(), S.topN, `SoundStats · Top ${S.topN} brani · ${periodLabel()}`);
   else if (e.target.closest('[data-artist-playlist]') && S.detail) {
     createPlaylist(`SoundStats · Il meglio di ${S.detail.name}`, `I tuoi brani più ascoltati di ${S.detail.name}, creata con SoundStats.`,
@@ -1195,7 +1232,8 @@ if ('serviceWorker' in navigator && location.protocol !== 'file:') {
   }
   await route();
   // Salva gli ascolti recenti da Spotify all'apertura e ogni 10 minuti.
-  syncLive();
+  await syncLive();
+  Cloud.sync().then(r => { if (r && r.changed) { toast("Dati sincronizzati dagli altri dispositivi"); route(); } });
   setInterval(syncLive, 10 * 60 * 1000);
   document.addEventListener('visibilitychange', () => { if (!document.hidden) syncLive(); });
 })();

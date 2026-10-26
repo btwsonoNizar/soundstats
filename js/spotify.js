@@ -125,6 +125,7 @@ const Spotify = (() => {
   return {
     login, handleRedirect, api, logout, redirectUri,
     post: (path, body) => api(path, true, { method: 'POST', body }),
+    getToken: token,
     get loggedIn() { return !!auth; },
     hasScope: s => !!auth && (auth.scope || '').split(' ').includes(s),
     get configured() { return !!CONFIG.spotifyClientId; },
