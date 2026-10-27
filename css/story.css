@@ -1,0 +1,110 @@
+/* ---------- Confronto tra anni ---------- */
+.cmp-years { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 10px; margin-bottom: 8px; }
+.cmp-years select { width: 100%; height: 46px; padding: 0 12px; border: 1px solid var(--surface-3); border-radius: 12px; background: var(--surface-2); font-size: 17px; font-weight: 800; outline: 0; }
+.yt { display: flex; flex-direction: column; gap: 4px; }
+.yt-row { display: grid; grid-template-columns: 52px minmax(0, 1fr) 64px; grid-template-areas: "y bar d" "a a a" "t t t"; gap: 6px 10px; align-items: center; padding: 12px 0; border-bottom: 1px solid var(--line); }
+.yt-row:last-child { border-bottom: 0; }
+.yt-year { grid-area: y; font-size: 20px; font-weight: 900; }
+.yt-bar { grid-area: bar; position: relative; height: 26px; border-radius: 6px; background: var(--surface-2); overflow: hidden; }
+.yt-bar i { position: absolute; inset: 0 auto 0 0; border-radius: 6px; background: linear-gradient(90deg, #128a3e, var(--accent)); }
+.yt-bar em { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); font-style: normal; font-weight: 800; font-size: 13px; text-shadow: 0 1px 3px rgba(0, 0, 0, .6); }
+.yt-delta { grid-area: d; text-align: right; font-size: 13px; }
+.yt-top { display: flex; align-items: center; gap: 10px; min-width: 0; font-size: 14px; font-weight: 600; }
+.yt-top:nth-of-type(1) { grid-area: a; }
+.yt-top:nth-of-type(2) { grid-area: t; }
+.yt-top .pic.mini { width: 32px; height: 32px; }
+.yt-top span { display: flex; flex-direction: column; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.yt-top small { color: var(--text-3); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; }
+@media (min-width: 720px) {
+  .yt-row { grid-template-columns: 56px minmax(0, 1.2fr) 70px minmax(0, 1fr) minmax(0, 1fr); grid-template-areas: "y bar d a t"; }
+}
+
+/* ---------- Storia: decorazioni ed effetti ---------- */
+.st > .st-deco { position: absolute; inset: 0; z-index: 0; opacity: 1 !important; transform: none !important; animation: none !important; overflow: hidden; pointer-events: none; }
+.st > *:not(.st-deco) { position: relative; z-index: 1; }
+.st.in { animation: stEnter .55s cubic-bezier(.2, .8, .2, 1); }
+@keyframes stEnter { from { transform: scale(1.06); filter: blur(8px) brightness(1.3); } to { transform: none; filter: none; } }
+
+.blob { position: absolute; border-radius: 50%; filter: blur(50px); opacity: .55; mix-blend-mode: screen; animation: blobMove 9s ease-in-out infinite alternate; }
+.b1 { width: 70%; height: 45%; left: -20%; top: -10%; background: rgba(255, 255, 255, .35); }
+.b2 { width: 60%; height: 40%; right: -25%; top: 35%; background: rgba(0, 0, 0, .35); mix-blend-mode: multiply; animation-duration: 11s; animation-delay: -4s; }
+.b3 { width: 55%; height: 35%; left: 10%; bottom: -15%; background: rgba(255, 255, 255, .22); animation-duration: 13s; animation-delay: -8s; }
+@keyframes blobMove { to { transform: translate(18%, 12%) scale(1.25) rotate(25deg); } }
+.grain {
+  position: absolute; inset: -50%; opacity: .09; animation: grain 1s steps(4) infinite;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+@keyframes grain { 25% { transform: translate(-5%, 3%); } 50% { transform: translate(4%, -6%); } 75% { transform: translate(-3%, 5%); } }
+.st-eq { position: absolute; left: 0; right: 0; bottom: 0; height: 70px; display: flex; align-items: flex-end; gap: 4px; padding: 0 8px; opacity: .28; }
+.st-eq s { flex: 1; height: 20%; border-radius: 3px 3px 0 0; background: #fff; animation: eqBar var(--d) ease-in-out var(--o) infinite alternate; }
+@keyframes eqBar { to { height: 100%; } }
+
+.confetti { position: absolute; top: -20px; left: var(--x); width: var(--w); height: calc(var(--w) * .45); background: var(--c); border-radius: 2px; animation: confetti var(--dr) cubic-bezier(.25, .6, .5, 1) var(--dl) infinite; }
+@keyframes confetti { from { transform: translateY(0) rotate(0); opacity: 1; } to { transform: translateY(110vh) rotate(var(--r)); opacity: .8; } }
+.note { position: absolute; bottom: -40px; left: var(--x); font-size: var(--s); color: rgba(255, 255, 255, .6); font-style: normal; animation: noteUp var(--dr) linear var(--dl) infinite; }
+@keyframes noteUp { from { transform: translateY(0) rotate(-10deg); opacity: 0; } 15% { opacity: .9; } to { transform: translateY(-110vh) rotate(20deg); opacity: 0; } }
+.star { position: absolute; left: var(--x); top: var(--y); width: var(--s); height: var(--s); border-radius: 50%; background: #fff; animation: twinkle 2.4s ease-in-out var(--dl) infinite; }
+@keyframes twinkle { 50% { opacity: .15; transform: scale(.6); } }
+.moon { position: absolute; top: 12%; right: 10%; width: 90px; height: 90px; border-radius: 50%; box-shadow: -22px 10px 0 0 #fff8d6; transform: rotate(-20deg); filter: drop-shadow(0 0 18px rgba(255, 248, 214, .5)); animation: float 6s ease-in-out infinite; }
+@keyframes float { 50% { transform: rotate(-20deg) translateY(-12px); } }
+.sun { position: absolute; top: -60px; right: -60px; width: 240px; height: 240px; border-radius: 50%; background: radial-gradient(circle, #ffe680 0%, rgba(255, 210, 63, .5) 40%, transparent 70%); animation: pulseSun 4s ease-in-out infinite; }
+@keyframes pulseSun { 50% { transform: scale(1.15); opacity: .8; } }
+.rays {
+  position: absolute; left: 50%; top: 45%; width: 180vmax; height: 180vmax; margin: -90vmax 0 0 -90vmax; opacity: .16; animation: spin 40s linear infinite;
+  background: repeating-conic-gradient(from 0deg, #fff 0deg 6deg, transparent 6deg 18deg);
+  -webkit-mask: radial-gradient(circle, #000 0%, transparent 60%); mask: radial-gradient(circle, #000 0%, transparent 60%);
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Titoli con un riflesso che passa */
+.st h1, .st h2 { background: linear-gradient(110deg, #fff 40%, rgba(255, 255, 255, .55) 50%, #fff 60%) 0 0 / 250% 100%; -webkit-background-clip: text; background-clip: text; color: transparent; }
+.st.in h1, .st.in h2 { animation: stIn .6s cubic-bezier(.2, .8, .2, 1) forwards, shine 2.8s ease-in-out 1s infinite; }
+@keyframes shine { 0% { background-position: 100% 0; } 60%, 100% { background-position: -50% 0; } }
+.st h1 em { -webkit-text-fill-color: #0b0b0b; }
+
+/* Artista dell'anno: alone che ruota e scintille */
+.halo { position: relative; align-self: center; padding: 10px; border-radius: 50%; }
+.halo::before { content: ""; position: absolute; inset: 0; border-radius: 50%; background: conic-gradient(#fff, #ff5fa2, #ffd23f, #4dd8ff, #fff); animation: spin 4s linear infinite; filter: blur(2px); }
+.halo .pic.st-photo { position: relative; border: 6px solid rgba(0, 0, 0, .35); animation: kenburns 7s ease-in-out infinite alternate; }
+@keyframes kenburns { to { transform: scale(1.03); } }
+.spark { position: absolute; width: 18px; height: 18px; background: #fff; clip-path: polygon(50% 0, 62% 38%, 100% 50%, 62% 62%, 50% 100%, 38% 62%, 0 50%, 38% 38%); animation: sparkle 1.8s ease-in-out infinite; }
+.s1 { top: 4%; right: 8%; }
+.s2 { bottom: 10%; left: 2%; animation-delay: -.6s; width: 12px; height: 12px; }
+.s3 { top: 40%; left: -6%; animation-delay: -1.2s; }
+.s4 { bottom: -2%; right: 18%; animation-delay: -.3s; width: 14px; height: 14px; }
+@keyframes sparkle { 0%, 100% { transform: scale(0) rotate(0); opacity: 0; } 50% { transform: scale(1) rotate(90deg); opacity: 1; } }
+
+/* Canzone dell'anno: il vinile esce dalla copertina e gira */
+.sleeve { position: relative; width: min(58vw, 250px); height: min(58vw, 250px); margin-bottom: 8px; }
+.sleeve .pic.st-cover { position: absolute; inset: 0; width: 100% !important; height: 100% !important; z-index: 2; }
+.disc {
+  position: absolute; inset: 4%; border-radius: 50%; z-index: 1; display: grid; place-items: center;
+  background: repeating-radial-gradient(circle, #111 0 2px, #1d1d1d 2px 4px); box-shadow: 0 10px 30px rgba(0, 0, 0, .6);
+  animation: discOut 1s cubic-bezier(.2, .8, .2, 1) .4s forwards, discSpin 3s linear 1.4s infinite;
+}
+.disc::after { content: ""; position: absolute; inset: 0; border-radius: 50%; background: conic-gradient(from 30deg, transparent 0 40deg, rgba(255, 255, 255, .12) 50deg, transparent 70deg 220deg, rgba(255, 255, 255, .08) 230deg, transparent 250deg); }
+@keyframes discOut { to { transform: translateX(42%); } }
+@keyframes discSpin { from { transform: translateX(42%) rotate(0); } to { transform: translateX(42%) rotate(360deg); } }
+.disc-label { width: 36%; height: 36%; border-radius: 50%; overflow: hidden; border: 3px solid #111; }
+.disc-label .pic { width: 100%; height: 100%; border-radius: 50%; }
+
+/* Slide del confronto con l'anno prima */
+.st-versus { background: linear-gradient(160deg, #ff5fa2 0%, #8a2be2 55%, #1a0b33 100%); }
+.vs-bars { display: flex; flex-direction: column; gap: 14px; margin: 6px 0 4px; }
+.vs-row { display: grid; grid-template-columns: 56px 1fr auto; align-items: center; gap: 12px; font-weight: 800; }
+.vs-bar { height: 34px; border-radius: 10px; background: rgba(255, 255, 255, .12); overflow: hidden; }
+.vs-bar i { display: block; height: 100%; width: 0; border-radius: 10px; transition: width 1.4s cubic-bezier(.2, .8, .2, 1) .5s; }
+.vs-row.old .vs-bar i { background: rgba(255, 255, 255, .45); }
+.vs-row.new .vs-bar i { background: linear-gradient(90deg, #ffd23f, #fff); box-shadow: 0 0 20px rgba(255, 210, 63, .6); }
+.vs-row b { font-size: 18px; min-width: 70px; text-align: right; }
+.vs-swap { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 10px; padding: 14px; border-radius: 18px; background: rgba(0, 0, 0, .22); }
+.vs-swap span { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 4px; min-width: 0; }
+.vs-swap small { color: rgba(255, 255, 255, .7); font-weight: 700; }
+.vs-swap b { font-size: 16px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vs-swap em { font-style: normal; font-size: 28px; font-weight: 900; }
+.st .vs-swap .pic.st-thumb { width: 64px; height: 64px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .st-deco *, .halo::before, .st.in, .st h1, .st h2 { animation: none !important; }
+  .disc { animation: none !important; transform: translateX(42%); }
+}

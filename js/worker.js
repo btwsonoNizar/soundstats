@@ -452,6 +452,20 @@ function compare({ a, b, kind }) {
   return { A: rangeTotals(a), B: rangeTotals(b), rows, dropped };
 }
 
+// Riepilogo anno per anno (eventualmente solo fino allo stesso giorno: cutoff = [mese, giorno]).
+function yearsSummary({ minMs, noSkip, cutoff }) {
+  const y0 = 2000 + Math.floor(X.mon[0] / 12), y1 = 2000 + Math.floor(X.mon[D.n - 1] / 12);
+  const out = [];
+  for (let y = y0; y <= y1; y++) {
+    const to = cutoff ? new Date(y, cutoff[0], cutoff[1] + 1) : new Date(y + 1, 0, 1);
+    const flt = { from: new Date(y, 0, 1) / 1000, to: to / 1000, minMs, noSkip };
+    const tot = rangeTotals(flt);
+    if (!tot.plays) continue;
+    out.push({ year: y, ...tot, artist: topOf(flt, 'artists', 1)[0] || null, track: topOf(flt, 'tracks', 1)[0] || null });
+  }
+  return out;
+}
+
 // Fissazioni: tanti ascolti in due settimane e poi quasi più niente.
 function obsessions({ flt, kind }) {
   const [lo, hi] = bounds(flt);
@@ -859,6 +873,7 @@ const handlers = {
   addLive: needData(addLive), setAlbums: needData(setAlbums), totals: needData(totals), day: needData(dayPlays),
   memories: needData(memories), records: needData(records), compare: needData(compare),
   obsessions: needData(obsessions), artistYears: needData(artistYears), exportData: needData(exportData),
+  yearsSummary: needData(yearsSummary),
   overview: needData(overview), top: needData(top), detail: needData(detail),
 };
 

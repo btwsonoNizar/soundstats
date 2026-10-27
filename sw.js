@@ -4,11 +4,12 @@
  * si apre anche offline. Quando pubblichi una nuova versione, cambia
  * il numero in CACHE (es. v2) per forzare l'aggiornamento.
  */
-const CACHE = 'soundstats-v7';
+const CACHE = 'soundstats-v8';
 const ASSETS = [
   './',
   'index.html',
   'css/style.css',
+  'css/story.css',
   'js/config.js',
   'js/spotify.js',
   'js/images.js',

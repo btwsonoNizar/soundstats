@@ -31,7 +31,7 @@ const EXPLORE = [
   ['today', '#/today', 'Oggi', 'La timeline degli ascolti di oggi'],
   ['memories', '#/memories', 'Un anno fa oggi', 'Cosa ascoltavi in questo giorno negli anni passati'],
   ['records', '#/records', 'Record', 'Giorno record, serie, sessione più lunga'],
-  ['compare', '#/compare', 'Confronta', 'Questo periodo contro il precedente'],
+  ['compare', '#/compare', 'Confronta', 'Periodi e anni a confronto'],
   ['obsessions', '#/obsessions', 'Fissazioni', 'Brani e artisti consumati e poi abbandonati'],
   ['genres', '#/genres', 'Generi', 'I tuoi generi e come cambiano'],
   ['story', '#/story', 'Il tuo anno', 'La storia animata del tuo anno in musica'],
@@ -147,7 +147,45 @@ function comparePresets() {
     month: { a: [new Date(y, m - 1, 1), new Date(y, m, 1)], b: [new Date(y, m - 2, 1), new Date(y, m - 1, 1)], la: monName((y - 2000) * 12 + m - 1), lb: monName((y - 2000) * 12 + m - 2) },
     ytd: { a: [new Date(y, 0, 1), endDay], b: [new Date(y - 1, 0, 1), ytdEndPrev], la: `${y} fino al ${short(ref)}`, lb: `${y - 1} stesso periodo` },
     year: { a: [new Date(y - 1, 0, 1), new Date(y, 0, 1)], b: [new Date(y - 2, 0, 1), new Date(y - 1, 0, 1)], la: String(y - 1), lb: String(y - 2) },
+    years: yearsPreset(ref),
   };
+}
+
+// Due anni a scelta. "Stesso periodo": entrambi solo fino al giorno dell'ultimo ascolto.
+function yearsPreset(ref) {
+  const years = S.meta.years;
+  const A = years.includes(S.cmpA) ? S.cmpA : years[years.length - 1];
+  const B = years.includes(S.cmpB) && S.cmpB !== A ? S.cmpB : (years.filter(y => y !== A).pop() || A);
+  const same = S.cmpSame !== false && (A === ref.getFullYear() || B === ref.getFullYear());
+  const cut = y => same ? new Date(y, ref.getMonth(), ref.getDate() + 1) : new Date(y + 1, 0, 1);
+  const short = ref.toLocaleDateString('it-IT', { day: 'numeric', month: 'short' });
+  return {
+    A, B, same,
+    a: [new Date(A, 0, 1), cut(A)], b: [new Date(B, 0, 1), cut(B)],
+    la: same ? `${A} fino al ${short}` : String(A), lb: same ? `${B} fino al ${short}` : String(B),
+    cutoff: same ? [ref.getMonth(), ref.getDate()] : null,
+  };
+}
+
+// Tabella "anno per anno" con un grafico delle ore.
+async function yearsTableHtml(cutoff) {
+  const list = await call('yearsSummary', { minMs: S.filter.minSec * 1000, noSkip: !!S.filter.noSkip && !!S.meta.hasSkip, cutoff });
+  if (list.length < 2) return '';
+  const max = Math.max(...list.map(y => y.ms));
+  return `<section class="card list-card">
+    <div class="card-head"><h2>Anno per anno</h2></div>
+    ${cutoff ? '<p class="hint">Ogni anno fino allo stesso giorno, per un confronto alla pari</p>' : ''}
+    <div class="yt">${list.slice().reverse().map((y, i, arr) => {
+      const prev = arr[i + 1];
+      return `<div class="yt-row">
+        <b class="yt-year">${y.year}</b>
+        <span class="yt-bar"><i style="width:${Math.max(3, (y.ms / max) * 100).toFixed(1)}%"></i><em>${fmtHours(y.ms)} h</em></span>
+        <span class="yt-delta">${prev ? delta(y.ms, prev.ms) : ''}</span>
+        ${y.artist ? `<a class="yt-top" href="#/detail/artists/${y.artist.id}">${pic('artists', y.artist.name, '', 'mini')}<span><small>Artista n.1</small>${esc(y.artist.name)}</span></a>` : '<span></span>'}
+        ${y.track ? `<a class="yt-top" href="#/detail/tracks/${y.track.id}">${pic('tracks', y.track.name, y.track.sub, 'mini')}<span><small>Canzone n.1</small>${esc(y.track.name)}</span></a>` : '<span></span>'}
+      </div>`;
+    }).join('')}</div>
+  </section>`;
 }
 
 function delta(a, b) {
@@ -167,11 +205,21 @@ async function viewCompare(el, alive) {
   const presetKey = S.cmpPreset || '30', kind = S.cmpKind || 'artists';
   const p = comparePresets()[presetKey];
   const f = range => ({ from: range[0] / 1000, to: range[1] / 1000, minMs: S.filter.minSec * 1000, noSkip: !!S.filter.noSkip && !!S.meta.hasSkip });
-  const r = await call('compare', { a: f(p.a), b: f(p.b), kind });
+  const [r, yearsTable] = await Promise.all([
+    call('compare', { a: f(p.a), b: f(p.b), kind }),
+    presetKey === 'years' ? yearsTableHtml(p.cutoff) : '',
+  ]);
   if (!alive()) return;
   const A = r.A, B = r.B;
+  const years = S.meta.years.slice().reverse();
+  const yearSelect = (id, val) => `<select id="${id}">${years.map(y => `<option value="${y}" ${y === val ? 'selected' : ''}>${y}</option>`).join('')}</select>`;
   el.innerHTML = `
-    ${seg('cmpPreset', [['30', '30 giorni'], ['month', 'Mese'], ['ytd', 'Anno'], ['year', 'Anno scorso']], presetKey).replace('class="seg"', 'class="seg wide"')}
+    ${seg('cmpPreset', [['30', '30 giorni'], ['month', 'Mese'], ['ytd', 'Anno'], ['years', 'Anni']], presetKey).replace('class="seg"', 'class="seg wide"')}
+    ${presetKey === 'years' ? `
+    <div class="cmp-years">${yearSelect('cmpA', p.A)}<span class="vs">vs</span>${yearSelect('cmpB', p.B)}</div>
+    ${p.A === lastDataDate().getFullYear() || p.B === lastDataDate().getFullYear() ? `<label class="switch">
+      <span><b>Stesso periodo</b><small>Confronta entrambi gli anni solo fino al ${lastDataDate().toLocaleDateString('it-IT', { day: 'numeric', month: 'long' })}</small></span>
+      <input type="checkbox" id="cmpSame" ${p.same ? 'checked' : ''}></label>` : ''}` : ''}
     <div class="cmp-head"><span><small>Periodo</small><b>${esc(p.la)}</b></span><span class="vs">vs</span><span><small>Confronto</small><b>${esc(p.lb)}</b></span></div>
     <section class="tiles">
       ${tile('Tempo di ascolto', fmtHours(A.ms) + ' h', `${delta(A.ms, B.ms)} · prima ${fmtHours(B.ms)} h`)}
@@ -193,7 +241,14 @@ async function viewCompare(el, alive) {
         <span class="rank">${row.prevRank}</span>${pic(kind, row.name, row.sub, 'thumb')}
         <span class="main"><span class="name">${esc(row.name)}</span><span class="sub">prima: #${row.prevRank} · ${fmtHours(row.prevMs)} h</span></span>
         <span class="nums"><b>${fmtHours(row.ms)} h</b><small>ora</small></span></a>`).join('')}
-    </section>` : ''}`;
+    </section>` : ''}
+    ${yearsTable}`;
+  if (presetKey === 'years') {
+    $('#cmpA', el).onchange = e => { S.cmpA = +e.target.value; route(); };
+    $('#cmpB', el).onchange = e => { S.cmpB = +e.target.value; route(); };
+    const same = $('#cmpSame', el);
+    if (same) same.onchange = e => { S.cmpSame = e.target.checked; route(); };
+  }
   onSeg(el, 'cmpPreset', v => { S.cmpPreset = v; route(); });
   onSeg(el, 'cmpKind', v => { S.cmpKind = v; route(); });
 }
@@ -406,6 +461,47 @@ function countUp(el, to, dur = 1400) {
 
 let storyState = null;
 
+// Slide "quest'anno contro l'anno prima".
+function versusSlide(year, o, prevO, running) {
+  const max = Math.max(o.totalMs, prevO.totalMs);
+  const pa = prevO.topArtists[0], na = o.topArtists[0];
+  const prevTop = new Set(prevO.topArtists.slice(0, 5).map(a => a.id));
+  const newcomers = o.topArtists.slice(0, 5).filter(a => !prevTop.has(a.id));
+  const bar = (label, ms, cls) => `<div class="vs-row ${cls}"><span>${label}</span>
+    <span class="vs-bar"><i data-grow="${Math.max(4, (ms / max) * 100).toFixed(1)}%"></i></span><b>${fmtHours(ms)} h</b></div>`;
+  return `<div class="st st-versus"><span class="st-kicker">${year} contro ${year - 1}${running ? ' · stesso periodo' : ''}</span>
+    <h2>${o.totalMs >= prevO.totalMs ? 'Più musica che mai' : 'Un anno più tranquillo'}</h2>
+    <div class="vs-bars">${bar(String(year - 1), prevO.totalMs, 'old')}${bar(String(year), o.totalMs, 'new')}</div>
+    ${pa && na ? `<div class="vs-swap">
+      <span>${pic('artists', pa.name, '', 'st-thumb')}<small>${year - 1}</small><b>${esc(pa.name)}</b></span>
+      <em>→</em>
+      <span>${pic('artists', na.name, '', 'st-thumb')}<small>${year}</small><b>${esc(na.name)}</b></span></div>
+    <p class="st-small">${pa.id === na.id ? `<b>${esc(na.name)}</b> resta il tuo numero uno.` : `Il tuo numero uno è cambiato.`}
+      ${newcomers.length ? ` Nuovi nella tua top 5: <b>${newcomers.map(a => esc(a.name)).join(', ')}</b>.` : ''}</p>` : ''}</div>`;
+}
+
+// Strato decorativo di ogni slide: sfumature in movimento, grana, equalizzatore
+// e un effetto diverso a seconda della slide.
+function storyDeco(slide) {
+  const rnd = (a, b) => (a + Math.random() * (b - a)).toFixed(2);
+  let h = '<div class="st-deco" aria-hidden="true"><i class="blob b1"></i><i class="blob b2"></i><i class="blob b3"></i><span class="grain"></span>';
+  h += '<div class="st-eq">' + Array.from({ length: 28 }, () => `<s style="--d:${rnd(0.5, 1.4)}s;--o:${rnd(-1.4, 0)}s"></s>`).join('') + '</div>';
+  if (/st-(intro|outro)/.test(slide)) {
+    const colors = ['#1ed760', '#ffd23f', '#ff5fa2', '#4dd8ff', '#ffffff', '#b28dff'];
+    h += Array.from({ length: 46 }, (_, i) => `<b class="confetti" style="--x:${rnd(0, 100)}%;--dl:${rnd(0, 1.6)}s;--dr:${rnd(2.6, 4.8)}s;--r:${rnd(-540, 540)}deg;--c:${colors[i % colors.length]};--w:${rnd(6, 11)}px"></b>`).join('');
+  }
+  if (/st-minutes|st-track/.test(slide)) {
+    h += Array.from({ length: 12 }, (_, i) => `<b class="note" style="--x:${rnd(5, 95)}%;--dl:${rnd(0, 4)}s;--dr:${rnd(4, 7)}s;--s:${rnd(18, 34)}px">${i % 2 ? '♪' : '♫'}</b>`).join('');
+  }
+  if (/st-persona night/.test(slide)) {
+    h += Array.from({ length: 50 }, () => `<b class="star" style="--x:${rnd(0, 100)}%;--y:${rnd(0, 70)}%;--dl:${rnd(0, 3)}s;--s:${rnd(1, 3)}px"></b>`).join('') + '<b class="moon"></b>';
+  } else if (/st-persona/.test(slide)) {
+    h += '<b class="sun"></b>';
+  }
+  if (/st-records|st-genre/.test(slide)) h += '<b class="rays"></b>';
+  return h + '</div>';
+}
+
 async function viewStory(el, alive, yearArg) {
   const years = S.meta.years;
   const year = +(yearArg || (new Date().getMonth() < 1 ? new Date().getFullYear() - 1 : years[years.length - 1]));
@@ -417,11 +513,16 @@ async function viewStory(el, alive, yearArg) {
   }
   const p = periodOf('y-' + year);
   const flt = recapFilter(p, p.from, p.to);
-  const [o, rec, prev] = await Promise.all([
+  // L'anno prima, per il confronto (se l'anno è in corso: fino allo stesso giorno).
+  const now = new Date();
+  const prevTo = year === now.getFullYear() ? new Date(year - 1, now.getMonth(), now.getDate() + 1) : p.from;
+  const prevFlt = { ...flt, from: p.prevFrom / 1000, to: prevTo / 1000 };
+  const [o, rec, prevO] = await Promise.all([
     call('overview', { flt }),
     call('records', { flt }),
-    call('totals', { ranges: [[p.prevFrom / 1000, p.from / 1000]], minMs: flt.minMs, noSkip: flt.noSkip }),
+    call('overview', { flt: prevFlt }),
   ]);
+  const prev = [prevO.totalMs];
   if (!alive()) return;
   if (!o.plays) { el.innerHTML = '<div class="empty"><p>Nessun ascolto in questo anno.</p></div>'; return; }
   // I generi arrivano da Spotify: se non sono pronti in pochi secondi, la storia parte senza.
@@ -445,13 +546,16 @@ async function viewStory(el, alive, yearArg) {
       <span class="st-big" data-count="${minutes}">0</span><span class="st-unit">minuti</span>
       <p>Sono <b>${nf1.format(o.totalMs / 86400000)} giorni</b> interi di musica, <b>${fmtMin(o.perDayMs)} minuti</b> al giorno.</p>
       ${pct != null ? `<p class="st-delta ${pct >= 0 ? 'up' : 'down'}">${pct >= 0 ? '▲' : '▼'} ${Math.abs(pct)}% rispetto al ${year - 1}</p>` : ''}</div>`,
-    topA ? `<div class="st st-artist">${pic('artists', topA.name, '', 'st-photo', 'l')}
+    prevO.plays ? versusSlide(year, o, prevO, running) : '',
+    topA ? `<div class="st st-artist"><div class="halo">${pic('artists', topA.name, '', 'st-photo', 'l')}<i class="spark s1"></i><i class="spark s2"></i><i class="spark s3"></i><i class="spark s4"></i></div>
       <span class="st-kicker">Il tuo artista dell'anno</span><h2>${esc(topA.name)}</h2>
       <p><b>${fmtHours(topA.ms)} ore</b> insieme · ${plays(topA.plays)}</p>
       ${firstA ? `<p class="st-small">Lo ascolti dal ${fmtDate(firstA.first)}</p>` : ''}</div>` : '',
     `<div class="st st-list"><span class="st-kicker">I tuoi artisti più ascoltati</span>
       <ol>${o.topArtists.slice(0, 5).map(a => `<li>${pic('artists', a.name, '', 'st-thumb')}<span><b>${esc(a.name)}</b><small>${fmtHours(a.ms)} ore</small></span></li>`).join('')}</ol></div>`,
-    topT ? `<div class="st st-track">${pic('tracks', topT.name, topT.sub, 'st-cover', 'l')}
+    topT ? `<div class="st st-track"><div class="sleeve">
+        <div class="disc"><span class="disc-label">${pic('tracks', topT.name, topT.sub, 'disc-pic', 'l')}</span></div>
+        ${pic('tracks', topT.name, topT.sub, 'st-cover', 'l')}</div>
       <span class="st-kicker">La tua canzone dell'anno</span><h2>${esc(topT.name)}</h2><p>${esc(topT.sub)}</p>
       <p class="st-small">L'hai ascoltata <b>${nf.format(topT.plays)} volte</b>, per ${fmtHours(topT.ms)} ore.</p></div>` : '',
     `<div class="st st-list"><span class="st-kicker">Le tue canzoni più ascoltate</span>
@@ -459,7 +563,7 @@ async function viewStory(el, alive, yearArg) {
     genres && genres.list.length ? `<div class="st st-genre"><span class="st-kicker">Il tuo genere</span>
       <h2>${esc(capFirst(genres.list[0].name))}</h2>
       <div class="st-chips">${genres.list.slice(1, 6).map(g => `<span>${esc(capFirst(g.name))}</span>`).join('')}</div></div>` : '',
-    `<div class="st st-persona"><span class="st-kicker">Il tuo stile di ascolto</span><h2>${persona}</h2><p>${personaText}</p>
+    `<div class="st st-persona${rec.nightShare >= 0.2 ? ' night' : ''}"><span class="st-kicker">Il tuo stile di ascolto</span><h2>${persona}</h2><p>${personaText}</p>
       <p class="st-small">Il mese con più musica: <b>${MESI[(o.byMonth.start + bestMonth) % 12]}</b>.${o.discovered ? ` Hai scoperto <b>${nf.format(o.discovered)}</b> nuovi artisti.` : ''}</p></div>`,
     `<div class="st st-records"><span class="st-kicker">I tuoi record</span>
       ${rec.bestDay ? `<p><b>${fmtMin(rec.bestDay.ms)} minuti</b><small>nel tuo giorno record, ${fmtDate(rec.bestDay.date)}</small></p>` : ''}
@@ -486,7 +590,9 @@ async function viewStory(el, alive, yearArg) {
   const show = i => {
     idx = Math.max(0, Math.min(slides.length - 1, i));
     stage.innerHTML = slides[idx];
+    stage.firstElementChild.insertAdjacentHTML('afterbegin', storyDeco(slides[idx]));
     stage.firstElementChild.classList.add('in');
+    stage.querySelectorAll('[data-grow]').forEach(b => setTimeout(() => { b.style.width = b.dataset.grow; }, 60));
     story.dataset.slide = idx;
     bars.forEach((b, j) => { b.style.transition = 'none'; b.style.width = j < idx ? '100%' : '0%'; });
     const c = stage.querySelector('[data-count]');
